@@ -65,8 +65,8 @@ export default defineConfig({
             "@root": CONFIG_DIR,
 
             // ── Wails 运行时 & 绑定 ─────────────────────────────────
-            // wailsjs/runtime - Wails 内置运行时 stub（运行时由 Wails 引擎替换）
-            "@wailsio/runtime": path.resolve(CONFIG_DIR, "wailsjs/runtime/runtime.js"),
+            // 使用独立 shim（不会被 wails generate bindings 覆盖）
+            "@wailsio/runtime": path.resolve(SRC_ROOT, "wails-runtime-shim.js"),
 
             // ── Tauri → Wails / 浏览器 shim ────────────────────
             // Mihomo API 插件 shim（fetch/WebSocket 直连）

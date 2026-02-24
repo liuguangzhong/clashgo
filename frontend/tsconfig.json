@@ -28,7 +28,7 @@
         "./*"
       ],
       "@wailsio/runtime": [
-        "wailsjs/runtime/runtime.js"
+        "src/wails-runtime-shim.js"
       ],
       "tauri-plugin-mihomo-api": [
         "src/tauri-plugin-mihomo-api.ts"

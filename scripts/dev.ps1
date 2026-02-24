@@ -4,9 +4,9 @@
 # ────────────────────────────────────────────────────────
 $ErrorActionPreference = "Stop"
 
-function Info { Write-Host "[INFO]  $args" -ForegroundColor Cyan }
-function Ok { Write-Host "[OK]    $args" -ForegroundColor Green }
-function Fail { Write-Host "[FAIL]  $args" -ForegroundColor Red; exit 1 }
+function Info { param([string]$msg) Write-Host "[INFO]  $msg" -ForegroundColor Cyan }
+function Ok { param([string]$msg) Write-Host "[OK]    $msg" -ForegroundColor Green }
+function Fail { param([string]$msg) Write-Host "[FAIL]  $msg" -ForegroundColor Red; exit 1 }
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = (Resolve-Path "$ScriptDir\..").Path
@@ -21,13 +21,14 @@ if (-not (Get-Command wails -ErrorAction SilentlyContinue)) {
     Info "安装 Wails CLI..."
     & go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
     $env:PATH += ";$(go env GOPATH)\bin"
+    if (-not (Get-Command wails -ErrorAction SilentlyContinue)) { Fail "Wails CLI 安装失败" }
 }
 
 # 确保前端依赖
 if (-not (Test-Path "frontend\node_modules")) {
     Info "安装前端依赖..."
     Push-Location frontend
-    pnpm install
+    & pnpm install
     Pop-Location
 }
 
