@@ -1,0 +1,54 @@
+# nfpm.yaml - 打包配置（生成 .deb / .rpm / .apk）
+# 使用方法: nfpm package --packager deb --config nfpm.yaml
+
+name: clashgo
+arch: amd64
+platform: linux
+version: "1.0.0"
+release: 1
+section: net
+priority: optional
+maintainer: ClashGo Team <dev@clashgo.dev>
+description: |
+  ClashGo - Mihomo Proxy GUI
+  A high-performance proxy client built with Go + Wails.
+  Based on Clash Verge Rev, rewritten in pure Go.
+homepage: https://github.com/your-org/clashgo
+license: GPL-3.0
+
+depends:
+  - libwebkit2gtk-4.1-0
+  - libayatana-appindicator3-1
+  - openssl
+  - libglib2.0-0
+  - libgtk-3-0
+
+recommends:
+  - notify-send
+
+contents:
+  # 主程序
+  - src: ./build/bin/clashgo
+    dst: /usr/bin/clashgo
+    file_info:
+      mode: 0755
+
+  # 图标
+  - src: ./build/appicon.png
+    dst: /usr/share/pixmaps/clashgo.png
+
+  # Desktop entry（应用启动器）
+  - src: ./build/linux/clashgo.desktop
+    dst: /usr/share/applications/clashgo.desktop
+
+  # 资源目录（GeoIP/GeoSite 数据库）
+  - dst: /usr/lib/clashgo
+    type: dir
+
+  # systemd 服务（特权 TUN 操作）
+  - src: ./build/linux/clashgo-service.service
+    dst: /usr/lib/systemd/system/clashgo-service.service
+
+scripts:
+  postinstall: ./build/linux/postinstall.sh
+  preremove: ./build/linux/preremove.sh

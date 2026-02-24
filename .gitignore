@@ -1,0 +1,32 @@
+# ── Go ──────────────────────────────────
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+vendor/
+
+# ── Node / Frontend ────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# ── Wails Build ────────────────────────
+build/bin/
+
+# ── IDE ────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Logs / Temp ────────────────────────
+*.log
+/tmp/
+C:\Temp\

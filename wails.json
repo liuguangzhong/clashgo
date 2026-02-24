@@ -1,0 +1,20 @@
+{
+    "$schema": "https://wails.io/schemas/config.v2.json",
+    "name": "clashgo",
+    "outputfilename": "clashgo",
+    "frontend:install": "pnpm install",
+    "frontend:build": "pnpm run build",
+    "frontend:dev:watcher": "pnpm run dev",
+    "frontend:dev:serverUrl": "auto",
+    "author": {
+        "name": "ClashGo Team",
+        "email": ""
+    },
+    "info": {
+        "productName": "ClashGo",
+        "productVersion": "1.0.0",
+        "productDescription": "A Mihomo GUI based on Go + Wails",
+        "copyright": "GPL-3.0",
+        "comments": ""
+    }
+}

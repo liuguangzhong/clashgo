@@ -1,0 +1,20 @@
+'use strict';
+import { Call as $Call } from "@wailsio/runtime";
+
+export const GetProxies = () => $Call.ByName("api.ProxyAPI.GetProxies");
+export const GetRules = () => $Call.ByName("api.ProxyAPI.GetRules");
+export const GetProviders = () => $Call.ByName("api.ProxyAPI.GetProviders");
+export const SelectProxy = (group, name) => $Call.ByName("api.ProxyAPI.SelectProxy", group, name);
+export const TestProxyDelay = (name, url, ms) => $Call.ByName("api.ProxyAPI.TestProxyDelay", name, url, ms);
+export const UpdateProxyProvider = (name) => $Call.ByName("api.ProxyAPI.UpdateProxyProvider", name);
+export const GetConnections = () => $Call.ByName("api.ProxyAPI.GetConnections");
+export const DeleteConnection = (id) => $Call.ByName("api.ProxyAPI.DeleteConnection", id);
+export const DeleteAllConnections = () => $Call.ByName("api.ProxyAPI.DeleteAllConnections");
+export const GetTraffic = () => $Call.ByName("api.ProxyAPI.GetTraffic");
+export const DNSQuery = (name, qtype) => $Call.ByName("api.ProxyAPI.DNSQuery", name, qtype);
+export const UpdateGeoData = () => $Call.ByName("api.ProxyAPI.UpdateGeoData");
+export const StartCore = () => $Call.ByName("api.ProxyAPI.StartCore");
+export const StopCore = () => $Call.ByName("api.ProxyAPI.StopCore");
+export const RestartCore = () => $Call.ByName("api.ProxyAPI.RestartCore");
+export const ChangeCoreVersion = (name) => $Call.ByName("api.ProxyAPI.ChangeCoreVersion", name);
+export const GetClashLogs = () => $Call.ByName("api.ProxyAPI.GetClashLogs");

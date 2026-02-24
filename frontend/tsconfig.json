@@ -1,0 +1,87 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ESNext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": false,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": [
+        "src/*"
+      ],
+      "@root/*": [
+        "./*"
+      ],
+      "@wailsio/runtime": [
+        "wailsjs/runtime/runtime.js"
+      ],
+      "tauri-plugin-mihomo-api": [
+        "src/tauri-plugin-mihomo-api.ts"
+      ],
+      "@tauri-apps/api": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/api/core": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/api/app": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/api/event": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/api/window": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/api/webview": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/api/webviewWindow": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/api/path": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/plugin-http": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/plugin-clipboard-manager": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/plugin-dialog": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/plugin-fs": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/plugin-shell": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/plugin-process": [
+        "src/tauri-shim.ts"
+      ],
+      "@tauri-apps/plugin-updater": [
+        "src/tauri-shim.ts"
+      ]
+    }
+  },
+  "include": [
+    "./src",
+    "./wailsjs"
+  ]
+}

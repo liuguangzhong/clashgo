@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=ClashGo
+GenericName=Proxy Client
+Comment=Mihomo Proxy GUI - Go Edition
+Exec=/usr/bin/clashgo
+Icon=clashgo
+Categories=Network;
+Keywords=proxy;vpn;clash;mihomo;
+StartupNotify=true
+MimeType=x-scheme-handler/clash;x-scheme-handler/clash-verge;
