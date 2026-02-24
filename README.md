@@ -169,9 +169,11 @@ chmod +x scripts/build.sh
 
 | 平台 | 产物 | 大小 |
 |------|------|------|
-| Windows | `clashgo.exe` | ~35MB |
-| Linux | `clashgo` | ~25MB |
-| macOS | `ClashGo.app` | ~35MB |
+| Windows | `clashgo.exe` | ~60MB |
+| Linux | `clashgo` | ~50MB |
+| macOS | `ClashGo.app` | ~60MB |
+
+> 💡 二进制已内嵌 Mihomo 代理内核，无需额外下载。
 
 ### 一键启动（开发模式）
 
@@ -196,6 +198,92 @@ make dev          # 开发模式
 make test         # 运行测试
 make clean        # 清理产物
 ```
+
+---
+
+## 📖 使用指南
+
+ClashGo 的界面和操作方式**与 Clash Verge Rev 完全一致**。如果你用过原版，可以无缝上手。
+
+### 启动
+
+```bash
+# 方式 1: 直接运行编译好的二进制
+./build/bin/clashgo          # Linux/macOS
+.\build\bin\clashgo.exe      # Windows
+
+# 方式 2: 开发模式
+wails dev
+```
+
+启动后会弹出主窗口，同时在系统托盘显示图标（右键可快速切换模式）。
+
+### 添加订阅
+
+1. 打开主界面，点击左侧 **「订阅」** (Profiles) 标签
+2. 点击顶部 **「导入」** 按钮（或直接粘贴订阅链接到输入框）
+3. 输入你的订阅 URL，点击 **「导入」**
+4. 导入成功后，点击订阅卡片使其变为 **激活** 状态（高亮）
+5. 代理核心会自动加载该配置并启动
+
+> 💡 支持导入 Clash/Mihomo YAML 格式的订阅链接，也支持本地 YAML 文件。
+
+### 配置系统代理
+
+1. 在主界面左侧点击 **「设置」** (Settings)
+2. 找到 **「系统代理」** 开关，打开即可自动设置系统代理
+3. 系统代理会指向 Mihomo 的 mixed-port（默认 7897）
+
+### 切换代理模式
+
+在主界面顶部或系统托盘右键菜单中可切换三种模式：
+
+| 模式 | 说明 |
+|------|------|
+| **Rule** (规则) | 按规则分流 — 国内直连，国外走代理（推荐日常使用） |
+| **Global** (全局) | 所有流量走代理 |
+| **Direct** (直连) | 所有流量直连，代理暂停 |
+
+### 选择代理节点
+
+1. 点击左侧 **「代理」** (Proxies) 标签
+2. 展开代理组（如 PROXY / 自动选择 / 手动选择）
+3. 点击想要的节点即可切换
+4. 节点右侧的延迟数字可以点击测速
+
+### 启用 TUN 模式（全局透明代理）
+
+1. 进入 **「设置」** → 打开 **「TUN 模式」**
+2. 首次开启需要管理员权限（Windows 弹 UAC，Linux 弹 polkit）
+3. TUN 模式会接管系统所有网络流量，无需配置系统代理
+
+> ⚠️ TUN 模式需要管理员/root 权限。
+
+### 配置增强（Merge / Script）
+
+1. 在 **「订阅」** 页面点击任意订阅卡片右侧的 **编辑** 按钮
+2. 可以添加 **Merge 配置**（YAML 片段合并到订阅）或 **Script 脚本**（JS 动态修改）
+3. 支持 Monaco Editor 代码编辑，语法高亮 + 自动补全
+
+### 查看连接与日志
+
+- **「连接」** (Connections) 页面：查看实时活跃连接、流量统计，可断开指定连接
+- **「日志」** (Logs) 页面：查看 Mihomo 代理内核的实时日志
+
+### 数据目录
+
+| 平台 | 配置目录 |
+|------|----------|
+| Windows | `%APPDATA%\clashgo\` |
+| macOS | `~/Library/Application Support/clashgo/` |
+| Linux | `~/.config/clashgo/` |
+
+配置文件包括：
+- `verge.yaml` — 应用设置（语言、主题、系统代理、热键等）
+- `clash.yaml` — Clash 基础配置（端口、DNS、模式等）
+- `profiles.yaml` — 订阅列表
+- `profiles/` 目录 — 订阅的 YAML 配置文件
+- `runtime.yaml` — 增强流水线生成的实际运行配置
 
 ---
 

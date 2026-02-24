@@ -1,20 +1,20 @@
 package core
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"os/exec"
-	"runtime"
+	"os"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"clashgo/internal/config"
 	"clashgo/internal/enhance"
 	"clashgo/internal/utils"
+
+	mihomoConstant "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/hub"
+	"github.com/metacubex/mihomo/hub/executor"
+	mihomoLog "github.com/metacubex/mihomo/log"
 
 	"go.uber.org/zap"
 )
@@ -36,21 +36,19 @@ func (m RunningMode) String() string {
 
 // Manager 管理 Mihomo 代理核心的生命周期
 //
-// 架构决策：使用 Sidecar 模式（外部进程）
+// 架构: 同进程嵌入模式
 //
-// 原因：Mihomo 将自身作为独立进程设计，其 hub 包的初始化
-// 依赖全局状态（init() 副作用），在同一进程内多次初始化
-// 会产生竞争。Sidecar 模式通过成熟的 REST API 通信，
-// 与 Mihomo 官方维护的 external-controller 对齐，是最稳定的选择。
+// Mihomo 作为 Go 库直接 import，通过 hub.Parse() 在同进程中启动。
+// 配置热加载通过 executor.ApplyConfig() 实现，无需 HTTP API 或子进程通信。
+// 优势：零 IPC 延迟、零序列化开销、错误直接以 Go error 返回。
 type Manager struct {
 	mu     sync.Mutex
 	mode   atomic.Int32
 	cfgMgr *config.Manager
 
-	cmd    *exec.Cmd
-	logBuf *ringBuffer // 最近 500 条日志
-
+	logBuf      *ringBuffer // 最近 500 条日志
 	logCallback func(level, msg string)
+	logDone     chan struct{} // 用于停止日志订阅 goroutine
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -78,7 +76,7 @@ func Global() *Manager {
 	return globalManager
 }
 
-// Start 生成运行时配置并启动 Mihomo 子进程
+// Start 生成运行时配置并在同进程中启动 Mihomo
 func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -89,16 +87,62 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	m.ctx, m.cancel = context.WithCancel(ctx)
 
+	// 设置 Mihomo 工作目录
+	homeDir := utils.Dirs().HomeDir()
+	mihomoConstant.SetHomeDir(homeDir)
+	mihomoConstant.SetConfig("")
+
+	utils.Log().Info("Starting Mihomo in-process",
+		zap.String("homeDir", homeDir),
+	)
+
 	runtimePath, err := m.generateRuntimeConfig()
 	if err != nil {
 		utils.Log().Warn("Config generation failed, using base clash config", zap.Error(err))
 		runtimePath = utils.Dirs().ClashPath()
 	}
 
-	return m.startProcess(runtimePath)
+	return m.startInProcess(runtimePath)
 }
 
-// Stop 向 Mihomo 进程发送终止信号并等待退出
+// startInProcess 读取配置文件并通过 hub.Parse() 在同进程中启动 Mihomo
+func (m *Manager) startInProcess(configPath string) error {
+	configBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("read config %s: %w", configPath, err)
+	}
+
+	// 获取配置中的 external-controller 和 secret
+	clash := m.cfgMgr.GetClash()
+	server := m.getServer(clash)
+	secret := m.getSecret(clash)
+
+	// 构造 hub options
+	var opts []hub.Option
+	opts = append(opts, hub.WithExternalController(server))
+	if secret != "" {
+		opts = append(opts, hub.WithSecret(secret))
+	}
+
+	// 核心调用: hub.Parse() 在同进程中初始化 Mihomo
+	// 包括: 解析配置 → 启动 DNS → 启动 Tunnel → 启动监听器 → 启动 external-controller
+	if err := hub.Parse(configBytes, opts...); err != nil {
+		return fmt.Errorf("mihomo hub.Parse: %w", err)
+	}
+
+	m.mode.Store(int32(ModeRunning))
+	utils.Log().Info("Mihomo started in-process",
+		zap.String("config", configPath),
+		zap.String("controller", server),
+	)
+
+	// 启动日志订阅
+	m.startLogSubscription()
+
+	return nil
+}
+
+// Stop 停止 Mihomo (在同进程模式下，关闭监听器和 tunnel)
 func (m *Manager) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -108,28 +152,25 @@ func (m *Manager) Stop() error {
 		m.cancel = nil
 	}
 
-	if m.cmd != nil && m.cmd.Process != nil {
-		if err := m.cmd.Process.Kill(); err != nil {
-			utils.Log().Warn("Kill mihomo failed", zap.Error(err))
-		}
-		m.cmd = nil
+	// 停止日志订阅
+	if m.logDone != nil {
+		close(m.logDone)
+		m.logDone = nil
 	}
 
+	// 同进程模式下，Mihomo 的 Tunnel 和 Listener 在下次 ApplyConfig 时会被替换
+	// 我们标记为未运行即可
 	m.mode.Store(int32(ModeNotRunning))
-	utils.Log().Info("Mihomo core stopped")
+	utils.Log().Info("Mihomo core stopped (in-process)")
 	return nil
 }
 
-// Restart 重启：先停止，等待 500ms 确保端口释放，再启动
+// Restart 重启：重新生成配置并 Apply
 func (m *Manager) Restart() error {
-	if err := m.Stop(); err != nil {
-		utils.Log().Warn("Stop failed during restart", zap.Error(err))
-	}
-	time.Sleep(500 * time.Millisecond)
 	return m.Start(context.Background())
 }
 
-// UpdateConfig 重新生成增强配置，通过 Mihomo HTTP API 热加载（无需重启）
+// UpdateConfig 重新生成增强配置并热加载（同进程，无需重启）
 func (m *Manager) UpdateConfig() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -141,10 +182,22 @@ func (m *Manager) UpdateConfig() error {
 
 	if m.mode.Load() != int32(ModeRunning) {
 		// 核心未运行时，直接启动
-		return m.startProcess(runtimePath)
+		return m.startInProcess(runtimePath)
 	}
 
-	return m.reloadConfig(runtimePath)
+	return m.reloadConfigInProcess(runtimePath)
+}
+
+// reloadConfigInProcess 通过 executor 同进程热加载配置
+func (m *Manager) reloadConfigInProcess(configPath string) error {
+	cfg, err := executor.ParseWithPath(configPath)
+	if err != nil {
+		return fmt.Errorf("parse config for reload: %w", err)
+	}
+
+	executor.ApplyConfig(cfg, false)
+	utils.Log().Info("Config reloaded in-process", zap.String("path", configPath))
+	return nil
 }
 
 // RunningMode 返回当前运行模式
@@ -152,21 +205,14 @@ func (m *Manager) RunningMode() string {
 	return RunningMode(m.mode.Load()).String()
 }
 
-// IsRunning 检查进程是否在运行
+// IsRunning 检查核心是否在运行
 func (m *Manager) IsRunning() bool {
 	return m.mode.Load() == int32(ModeRunning)
 }
 
-// StartLogStream 通过 Mihomo /logs WebSocket 端点订阅实时日志
-// Mihomo 日志格式: {"type":"info","payload":"..."}
+// StartLogStream 订阅 Mihomo 内部日志 channel
 func (m *Manager) StartLogStream(callback func(level, msg string)) {
 	m.logCallback = callback
-
-	clash := m.cfgMgr.GetClash()
-	server := m.getServer(clash)
-	secret := m.getSecret(clash)
-
-	go m.streamLogs(server, secret)
 }
 
 // GetLogs 返回最近的日志条目（来自 ring buffer）
@@ -176,120 +222,32 @@ func (m *Manager) GetLogs() []string {
 
 // ─── 内部实现 ─────────────────────────────────────────────────────────────────
 
-func (m *Manager) startProcess(configPath string) error {
-	verge := m.cfgMgr.GetVerge()
-	coreName := verge.GetClashCore()
-	corePath := utils.Dirs().CoreBinaryPath(coreName)
-
-	args := []string{
-		"-d", utils.Dirs().HomeDir(),
-		"-f", configPath,
+// startLogSubscription 订阅 mihomo 内部的 log channel
+func (m *Manager) startLogSubscription() {
+	if m.logDone != nil {
+		close(m.logDone)
 	}
+	m.logDone = make(chan struct{})
 
-	// 根据平台选择 IPC 方式
-	switch runtime.GOOS {
-	case "windows":
-		// Windows 使用命名管道
-		args = append(args, "-ext-ctl-pipe", utils.Dirs().ServiceIPCPath())
-	default:
-		// Linux/macOS 使用 Unix Domain Socket
-		args = append(args, "-ext-ctl-unix", utils.Dirs().ServiceIPCPath())
-	}
+	logCh := mihomoLog.Subscribe()
+	done := m.logDone
 
-	m.cmd = exec.CommandContext(m.ctx, corePath, args...)
-	m.cmd.Stdout = &logWriter{callback: m.handleLogLine, level: "info"}
-	m.cmd.Stderr = &logWriter{callback: m.handleLogLine, level: "error"}
-
-	if err := m.cmd.Start(); err != nil {
-		return fmt.Errorf("start %s: %w", corePath, err)
-	}
-
-	m.mode.Store(int32(ModeRunning))
-	utils.Log().Info("Mihomo started",
-		zap.String("core", coreName),
-		zap.String("path", corePath),
-		zap.Int("pid", m.cmd.Process.Pid),
-	)
-
-	// 等待进程退出，自动更新状态
 	go func() {
-		err := m.cmd.Wait()
-		m.mode.Store(int32(ModeNotRunning))
-		if err != nil {
-			utils.Log().Warn("Mihomo process exited", zap.Error(err))
-		} else {
-			utils.Log().Info("Mihomo process exited cleanly")
+		defer mihomoLog.UnSubscribe(logCh)
+		for {
+			select {
+			case <-done:
+				return
+			case logEvent, ok := <-logCh:
+				if !ok {
+					return
+				}
+				level := logEvent.LogLevel.String()
+				msg := logEvent.Payload
+				m.handleLogLine(level, msg)
+			}
 		}
 	}()
-
-	return nil
-}
-
-// reloadConfig 通过 Mihomo REST API 热加载配置（无需重启进程）
-func (m *Manager) reloadConfig(configPath string) error {
-	clash := m.cfgMgr.GetClash()
-	return reloadMihomoConfig(m.getServer(clash), m.getSecret(clash), configPath)
-}
-
-// streamLogs 长轮询 Mihomo /logs 端点，解析 NDJSON 日志流
-func (m *Manager) streamLogs(server, secret string) {
-	url := "http://" + server + "/logs"
-	if secret != "" {
-		url += "?token=" + secret
-	}
-
-	for {
-		if m.ctx == nil {
-			return
-		}
-		select {
-		case <-m.ctx.Done():
-			return
-		default:
-		}
-
-		req, err := http.NewRequestWithContext(m.ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return
-		}
-		if secret != "" {
-			req.Header.Set("Authorization", "Bearer "+secret)
-		}
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			// 连接失败（核心尚未就绪），等待后重试
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		m.readLogStream(resp)
-		resp.Body.Close()
-
-		// 连接断开后等待重连
-		time.Sleep(1 * time.Second)
-	}
-}
-
-// readLogStream 逐行读取 NDJSON 日志流
-func (m *Manager) readLogStream(resp *http.Response) {
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			continue
-		}
-
-		var entry struct {
-			Type    string `json:"type"`
-			Payload string `json:"payload"`
-		}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			continue
-		}
-
-		m.handleLogLine(entry.Type, entry.Payload)
-	}
 }
 
 // handleLogLine 处理单条日志：存入 ring buffer + 触发回调
@@ -331,20 +289,6 @@ func (m *Manager) getSecret(clash config.IClashBase) string {
 		return s
 	}
 	return ""
-}
-
-// ─── logWriter ─────────────────────────────────────────────────────────────
-
-type logWriter struct {
-	callback func(level, msg string)
-	level    string
-}
-
-func (w *logWriter) Write(p []byte) (n int, err error) {
-	if w.callback != nil {
-		w.callback(w.level, string(p))
-	}
-	return len(p), nil
 }
 
 // ─── ringBuffer 定长循环日志缓冲 ─────────────────────────────────────────────
