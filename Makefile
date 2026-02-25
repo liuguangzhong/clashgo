@@ -28,19 +28,19 @@ dev:
 
 ## 生产构建（当前平台）
 build:
-	$(WAILS) build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)
+	$(WAILS) build -tags with_gvisor -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)
 
 ## 交叉编译 Linux amd64（可在 Windows 上运行）
 build-linux:
-	$(WAILS) build -platform linux/amd64 -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)-linux-amd64
+	$(WAILS) build -tags with_gvisor -platform linux/amd64 -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)-linux-amd64
 
 ## 交叉编译 Windows amd64
 build-windows:
-	$(WAILS) build -platform windows/amd64 -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)-windows-amd64.exe
+	$(WAILS) build -tags with_gvisor -platform windows/amd64 -ldflags "$(LDFLAGS)" -o $(BINARY_NAME)-windows-amd64.exe
 
 ## 仅编译 Go 代码（快速检查，不含前端）
 build-go:
-	$(GO) build -ldflags "$(LDFLAGS)" ./...
+	$(GO) build -tags with_gvisor -ldflags "$(LDFLAGS)" ./...
 
 ## 运行所有单元测试
 test:

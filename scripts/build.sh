@@ -31,10 +31,10 @@ detect_webkit_tags
 
 if [ -n "$PLATFORM" ]; then
     info "构建目标平台: $PLATFORM"
-    wails build -platform "$PLATFORM" -ldflags "$LDFLAGS" $WAILS_TAGS
+    wails build -tags with_gvisor -platform "$PLATFORM" -ldflags "$LDFLAGS" $WAILS_TAGS
 else
     info "构建当前平台..."
-    wails build -ldflags "$LDFLAGS" $WAILS_TAGS
+    wails build -tags with_gvisor -ldflags "$LDFLAGS" $WAILS_TAGS
 fi
 
 echo ""

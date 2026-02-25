@@ -408,7 +408,7 @@ func defaultClashBase() IClashBase {
 		"secret":              "clashgo-secret",
 		"tun": map[string]interface{}{
 			"enable":                false,
-			"stack":                 "gvisor",
+			"stack":                 "system",
 			"auto-route":            true,
 			"strict-route":          false,
 			"auto-detect-interface": true,
