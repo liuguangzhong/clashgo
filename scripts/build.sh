@@ -27,6 +27,16 @@ command -v node  >/dev/null 2>&1 || fail "Node.js 未安装。请先运行: bash
 command -v pnpm  >/dev/null 2>&1 || fail "pnpm 未安装。请先运行: bash scripts/setup.sh"
 command -v wails >/dev/null 2>&1 || fail "Wails CLI 未安装。请先运行: bash scripts/setup.sh"
 
+# Linux 上检查开发库是否就绪
+if [ "$(uname -s)" = "Linux" ] && command -v pkg-config >/dev/null 2>&1; then
+    if ! pkg-config --exists webkit2gtk-4.1 2>/dev/null && ! pkg-config --exists webkit2gtk-4.0 2>/dev/null; then
+        fail "webkit2gtk 开发库未安装。请先运行: bash scripts/setup.sh"
+    fi
+    if ! pkg-config --exists gtk+-3.0 2>/dev/null; then
+        fail "GTK 3 开发库未安装。请先运行: bash scripts/setup.sh"
+    fi
+fi
+
 ok "Go $(go version | awk '{print $3}')"
 ok "Node $(node -v)"
 ok "pnpm $(pnpm -v)"

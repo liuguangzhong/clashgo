@@ -146,63 +146,126 @@ case "$OS" in
     Linux)
         info "检查 Linux 开发库..."
 
-        # pkg-config 自身
-        if ! command -v pkg-config >/dev/null 2>&1; then
-            warn "pkg-config 未安装 (部分检测可能不准确)"
-            echo "    Ubuntu/Debian: sudo apt install pkg-config"
-            echo "    Fedora:        sudo dnf install pkgconfig"
-            echo "    Arch:          sudo pacman -S pkgconf"
+        # 检测发行版和包管理器
+        DISTRO=""
+        if [ -f /etc/os-release ]; then
+            . /etc/os-release
+            DISTRO="$ID"
         fi
 
-        # webkit2gtk (4.0 或 4.1 都行，构建脚本会自动选择正确的 tag)
-        if (command -v pkg-config >/dev/null 2>&1 && (pkg-config --exists webkit2gtk-4.1 2>/dev/null || pkg-config --exists webkit2gtk-4.0 2>/dev/null)); then
-            if pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
-                ok "webkit2gtk-4.1 (dev)"
-            else
-                ok "webkit2gtk-4.0 (dev)"
+        # ── Debian/Ubuntu 系 ──
+        if command -v apt-get >/dev/null 2>&1; then
+            NEED_INSTALL=()
+
+            # pkg-config
+            command -v pkg-config >/dev/null 2>&1 || NEED_INSTALL+=("pkg-config")
+
+            # build-essential (gcc 等)
+            command -v gcc >/dev/null 2>&1 || NEED_INSTALL+=("build-essential")
+
+            # webkit2gtk-4.1 dev (优先4.1，fallback 4.0)
+            if ! dpkg -s libwebkit2gtk-4.1-dev >/dev/null 2>&1 && ! dpkg -s libwebkit2gtk-4.0-dev >/dev/null 2>&1; then
+                NEED_INSTALL+=("libwebkit2gtk-4.1-dev")
             fi
-        elif command -v dpkg >/dev/null 2>&1 && (dpkg -s libwebkit2gtk-4.1-dev >/dev/null 2>&1 || dpkg -s libwebkit2gtk-4.0-dev >/dev/null 2>&1); then
-            ok "webkit2gtk (dev) [dpkg]"
-        elif command -v dpkg >/dev/null 2>&1 && (dpkg -s libwebkit2gtk-4.1-0 >/dev/null 2>&1 || dpkg -s libwebkit2gtk-4.0-0 >/dev/null 2>&1); then
-            warn "webkit2gtk: 运行时包已安装，但编译需要开发包 (-dev)"
-            echo "    sudo apt install libwebkit2gtk-4.1-dev"
-            ERRORS=$((ERRORS+1))
-        else
-            fail "webkit2gtk 未安装"
-            echo "    Ubuntu/Debian: sudo apt install libwebkit2gtk-4.1-dev"
-            echo "    Fedora:        sudo dnf install webkit2gtk4.1-devel"
-            echo "    Arch:          sudo pacman -S webkit2gtk-4.1"
-            ERRORS=$((ERRORS+1))
-        fi
 
-        # GTK 3
-        check_linux_dev_lib \
-            "gtk+-3.0" \
-            "libgtk-3-dev" \
-            "libgtk-3-0" \
-            "gtk3-devel" \
-            "gtk3" \
-            "libgtk-3"
+            # libsoup-3.0 (webkit2gtk-4.1 需要)
+            if ! dpkg -s libsoup-3.0-dev >/dev/null 2>&1; then
+                NEED_INSTALL+=("libsoup-3.0-dev")
+            fi
 
-        # libayatana-appindicator (可选但推荐，系统托盘需要)
-        if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists ayatana-appindicator3-0.1 2>/dev/null; then
-            ok "libayatana-appindicator3"
-        elif command -v dpkg >/dev/null 2>&1 && dpkg -s libayatana-appindicator3-dev >/dev/null 2>&1; then
-            ok "libayatana-appindicator3 [dpkg]"
+            # GTK 3 dev
+            if ! dpkg -s libgtk-3-dev >/dev/null 2>&1; then
+                NEED_INSTALL+=("libgtk-3-dev")
+            fi
+
+            # libayatana-appindicator (系统托盘)
+            if ! dpkg -s libayatana-appindicator3-dev >/dev/null 2>&1; then
+                NEED_INSTALL+=("libayatana-appindicator3-dev")
+            fi
+
+            if [ ${#NEED_INSTALL[@]} -gt 0 ]; then
+                warn "缺少以下开发库，正在自动安装..."
+                echo "    ${NEED_INSTALL[*]}"
+                echo ""
+                if sudo apt-get update -qq && sudo apt-get install -y "${NEED_INSTALL[@]}"; then
+                    ok "Linux 开发库安装完成"
+                else
+                    fail "部分开发库安装失败，请手动运行:"
+                    echo "    sudo apt-get install -y ${NEED_INSTALL[*]}"
+                    ERRORS=$((ERRORS+1))
+                fi
+            else
+                ok "Linux 开发库已就绪"
+            fi
+
+        # ── Fedora/RHEL 系 ──
+        elif command -v dnf >/dev/null 2>&1; then
+            NEED_INSTALL=()
+
+            command -v pkg-config >/dev/null 2>&1 || NEED_INSTALL+=("pkgconfig")
+            command -v gcc >/dev/null 2>&1 || NEED_INSTALL+=("gcc-c++")
+
+            if ! rpm -q webkit2gtk4.1-devel >/dev/null 2>&1; then
+                NEED_INSTALL+=("webkit2gtk4.1-devel")
+            fi
+            if ! rpm -q gtk3-devel >/dev/null 2>&1; then
+                NEED_INSTALL+=("gtk3-devel")
+            fi
+            if ! rpm -q libayatana-appindicator-gtk3-devel >/dev/null 2>&1; then
+                NEED_INSTALL+=("libayatana-appindicator-gtk3-devel")
+            fi
+
+            if [ ${#NEED_INSTALL[@]} -gt 0 ]; then
+                warn "缺少以下开发库，正在自动安装..."
+                echo "    ${NEED_INSTALL[*]}"
+                if sudo dnf install -y "${NEED_INSTALL[@]}"; then
+                    ok "Linux 开发库安装完成"
+                else
+                    fail "部分开发库安装失败"
+                    ERRORS=$((ERRORS+1))
+                fi
+            else
+                ok "Linux 开发库已就绪"
+            fi
+
+        # ── Arch 系 ──
+        elif command -v pacman >/dev/null 2>&1; then
+            NEED_INSTALL=()
+
+            pacman -Qi pkgconf >/dev/null 2>&1 || NEED_INSTALL+=("pkgconf")
+            pacman -Qi base-devel >/dev/null 2>&1 || NEED_INSTALL+=("base-devel")
+            pacman -Qi webkit2gtk-4.1 >/dev/null 2>&1 || NEED_INSTALL+=("webkit2gtk-4.1")
+            pacman -Qi gtk3 >/dev/null 2>&1 || NEED_INSTALL+=("gtk3")
+            pacman -Qi libayatana-appindicator >/dev/null 2>&1 || NEED_INSTALL+=("libayatana-appindicator")
+
+            if [ ${#NEED_INSTALL[@]} -gt 0 ]; then
+                warn "缺少以下开发库，正在自动安装..."
+                echo "    ${NEED_INSTALL[*]}"
+                if sudo pacman -S --noconfirm "${NEED_INSTALL[@]}"; then
+                    ok "Linux 开发库安装完成"
+                else
+                    fail "部分开发库安装失败"
+                    ERRORS=$((ERRORS+1))
+                fi
+            else
+                ok "Linux 开发库已就绪"
+            fi
+
         else
-            warn "libayatana-appindicator3 未安装 (系统托盘需要，可选)"
-            echo "    Ubuntu/Debian: sudo apt install libayatana-appindicator3-dev"
-            echo "    Fedora:        sudo dnf install libayatana-appindicator-gtk3-devel"
-            echo "    Arch:          sudo pacman -S libayatana-appindicator"
+            fail "未识别的 Linux 发行版，请手动安装以下开发库:"
+            echo "    webkit2gtk-4.1 (或 4.0), gtk3, libayatana-appindicator3, pkg-config, gcc"
+            ERRORS=$((ERRORS+1))
         fi
         ;;
     Darwin)
         if xcode-select -p >/dev/null 2>&1; then
             ok "Xcode CLT: $(xcode-select -p)"
         else
-            fail "Xcode Command Line Tools 未安装"
-            echo "    运行: xcode-select --install"
-            ERRORS=$((ERRORS+1))
+            warn "Xcode Command Line Tools 未安装，正在安装..."
+            xcode-select --install 2>/dev/null || {
+                fail "请手动运行: xcode-select --install"
+                ERRORS=$((ERRORS+1))
+            }
         fi
         ;;
 esac
