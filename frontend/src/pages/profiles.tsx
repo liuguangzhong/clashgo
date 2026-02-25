@@ -515,19 +515,8 @@ const ProfilePage = () => {
         console.error(`[Profile] 切换失败:`, err);
         showNotice.error(err, 4000);
       } finally {
-        // 只有当前profile仍然是正在切换的profile且序列号匹配时才清理状态
-        if (
-          switchingProfileRef.current === profile &&
-          currentSequence === requestSequenceRef.current
-        ) {
-          cleanupSwitchState(profile, currentSequence);
-        } else {
-          debugProfileSwitch(
-            "CLEANUP_SKIPPED",
-            profile,
-            `序列号不匹配或已被接管: ${currentSequence} vs ${requestSequenceRef.current}`,
-          );
-        }
+        // 始终清理切换状态，防止卡死
+        cleanupSwitchState(profile, currentSequence);
       }
     },
     [
@@ -540,9 +529,9 @@ const ProfilePage = () => {
     ],
   );
   const onSelect = async (current: string, force: boolean) => {
-    // 阻止重复点击或已激活的profile
-    if (switchingProfileRef.current === current) {
-      debugProfileSwitch("DUPLICATE_CLICK_IGNORED", current);
+    // 如果正在 activating 中，阻止重复点击
+    if (activatings.includes(current)) {
+      debugProfileSwitch("ACTIVATING_CLICK_IGNORED", current);
       return;
     }
 

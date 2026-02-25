@@ -214,3 +214,26 @@ func downloadAndCacheIcon(iconURL, name, homeDir string) (string, error) {
 
 	return destPath, nil
 }
+
+// ─── 文件操作（供前端 tauri-shim 调用）─────────────────────────────────────────
+
+// ReadTextFile 读取文本文件内容
+func (a *ConfigAPI) ReadTextFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read file: %w", err)
+	}
+	return string(data), nil
+}
+
+// WriteTextFile 写入文本文件
+func (a *ConfigAPI) WriteTextFile(path, content string) error {
+	return os.WriteFile(path, []byte(content), 0644)
+}
+
+// FileExists 检查文件是否存在
+func (a *ConfigAPI) FileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+

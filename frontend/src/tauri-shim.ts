@@ -25,10 +25,44 @@ export async function getVersion(): Promise<string> {
 // @tauri-apps/api/core
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** invoke — 未迁移 cmds 的 fallback stub */
-export async function invoke<T = unknown>(cmd: string, _args?: Record<string, unknown>): Promise<T> {
-    console.warn(`[tauri-shim] invoke('${cmd}') not migrated to Wails binding`);
-    return undefined as unknown as T;
+/** invoke — 将 Tauri invoke 映射到 Wails Call.ByName */
+export async function invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+    // 将 snake_case 的 invoke 命令映射到 Wails 绑定方法
+    const INVOKE_MAP: Record<string, { service: string; method: string; mapArgs?: (a: any) => any[] }> = {
+        // DNS 配置管理
+        "save_dns_config": { service: "ConfigAPI", method: "SaveDNSConfig", mapArgs: (a) => [a.dnsConfig] },
+        "apply_dns_config": { service: "ConfigAPI", method: "ApplyDNSConfig", mapArgs: (a) => [a.apply] },
+        "check_dns_config_exists": { service: "ConfigAPI", method: "CheckDNSConfigExists" },
+        "get_dns_config_content": { service: "ConfigAPI", method: "GetDNSConfigContent" },
+        "validate_dns_config": { service: "ConfigAPI", method: "ValidateDNSConfig" },
+        // UI 初始化 (这些不关键，静默成功即可)
+        "update_ui_stage": { service: "__noop__", method: "" },
+        "notify_ui_ready": { service: "__noop__", method: "" },
+    };
+
+    const mapping = INVOKE_MAP[cmd];
+    if (!mapping) {
+        console.warn(`[tauri-shim] invoke('${cmd}') not mapped to Wails binding`);
+        return undefined as unknown as T;
+    }
+
+    // noop 命令直接返回
+    if (mapping.service === "__noop__") {
+        return undefined as unknown as T;
+    }
+
+    try {
+        const wails = (window as any).go;
+        if (!wails?.api?.[mapping.service]?.[mapping.method]) {
+            console.warn(`[tauri-shim] Wails binding not found: api.${mapping.service}.${mapping.method}`);
+            return undefined as unknown as T;
+        }
+        const mappedArgs = mapping.mapArgs ? mapping.mapArgs(args || {}) : [];
+        return await wails.api[mapping.service][mapping.method](...mappedArgs);
+    } catch (err) {
+        console.error(`[tauri-shim] invoke('${cmd}') failed:`, err);
+        throw err;
+    }
 }
 
 /** convertFileSrc — 本地文件 URL 转换（Wails asset server 协议） */
@@ -210,13 +244,49 @@ export interface OpenDialogOptions {
     title?: string;
 }
 
-export async function open(_options?: OpenDialogOptions | string): Promise<string | string[] | null> {
-    console.warn("[tauri-shim] file dialog: use backend App.OpenFileDialog()");
-    return null;
+export async function open(options?: OpenDialogOptions | string): Promise<string | string[] | null> {
+    try {
+        const wrt = getWailsRT();
+        if (wrt?.OpenFileDialog) {
+            const opts: any = typeof options === 'string' ? { title: options } : (options || {});
+            const result = await wrt.OpenFileDialog({
+                Title: opts.title || 'Open File',
+                Filters: opts.filters?.map((f: any) => ({ DisplayName: f.name, Pattern: '*.' + (f.extensions?.[0] || '*') })) || [],
+            });
+            if (!result) return null;
+            return opts.multiple ? [result] : result;
+        }
+        // Fallback: use HTML input
+        return new Promise((resolve) => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            if (typeof options === 'object' && options?.directory) input.webkitdirectory = true;
+            input.onchange = () => {
+                const file = input.files?.[0];
+                resolve(file ? file.name : null);
+            };
+            input.click();
+        });
+    } catch (err) {
+        console.error('[tauri-shim] open dialog failed:', err);
+        return null;
+    }
 }
 
-export async function save(_options?: OpenDialogOptions | string): Promise<string | null> {
-    console.warn("[tauri-shim] save dialog: use backend App.SaveFileDialog()");
+export async function save(options?: OpenDialogOptions | string): Promise<string | null> {
+    try {
+        const wrt = getWailsRT();
+        if (wrt?.SaveFileDialog) {
+            const opts: any = typeof options === 'string' ? { title: options } : (options || {});
+            const result = await wrt.SaveFileDialog({
+                Title: opts.title || 'Save File',
+                DefaultFilename: opts.defaultPath || '',
+            });
+            return result || null;
+        }
+    } catch (err) {
+        console.error('[tauri-shim] save dialog failed:', err);
+    }
     return null;
 }
 
@@ -224,16 +294,38 @@ export async function save(_options?: OpenDialogOptions | string): Promise<strin
 // @tauri-apps/plugin-fs
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function readTextFile(_path: string): Promise<string> {
-    console.warn("[tauri-shim] readTextFile not available");
-    return "";
+export async function readTextFile(path: string): Promise<string> {
+    try {
+        const wails = (window as any).go;
+        if (wails?.api?.ConfigAPI?.ReadTextFile) {
+            return await wails.api.ConfigAPI.ReadTextFile(path);
+        }
+    } catch (err) {
+        console.warn('[tauri-shim] readTextFile failed:', err);
+    }
+    return '';
 }
 
-export async function writeTextFile(_path: string, _content: string): Promise<void> {
-    console.warn("[tauri-shim] writeTextFile not available");
+export async function writeTextFile(path: string, content: string): Promise<void> {
+    try {
+        const wails = (window as any).go;
+        if (wails?.api?.ConfigAPI?.WriteTextFile) {
+            await wails.api.ConfigAPI.WriteTextFile(path, content);
+        }
+    } catch (err) {
+        console.warn('[tauri-shim] writeTextFile failed:', err);
+    }
 }
 
-export async function exists(_path: string): Promise<boolean> {
+export async function exists(path: string): Promise<boolean> {
+    try {
+        const wails = (window as any).go;
+        if (wails?.api?.ConfigAPI?.FileExists) {
+            return await wails.api.ConfigAPI.FileExists(path);
+        }
+    } catch (err) {
+        console.warn('[tauri-shim] exists failed:', err);
+    }
     return false;
 }
 
