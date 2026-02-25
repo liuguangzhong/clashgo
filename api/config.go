@@ -124,3 +124,16 @@ func (a *ConfigAPI) GetRuntimeYAML() (string, error) {
 func (a *ConfigAPI) GetRuntimeLogs() map[string][][2]string {
 	return a.mgr.GetRuntime().ChainLogs
 }
+
+// GetRuntimeExists 返回运行时配置中已存在的 key 列表
+// 对应原: cmd::get_runtime_exists
+func (a *ConfigAPI) GetRuntimeExists() []string {
+	snap := a.mgr.GetRuntime()
+	keys := make([]string, 0, len(snap.ExistsKeys))
+	for k, v := range snap.ExistsKeys {
+		if v {
+			keys = append(keys, k)
+		}
+	}
+	return keys
+}

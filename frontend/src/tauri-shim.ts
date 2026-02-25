@@ -35,9 +35,9 @@ export async function invoke<T = unknown>(cmd: string, args?: Record<string, unk
         "check_dns_config_exists": { service: "ConfigAPI", method: "CheckDNSConfigExists" },
         "get_dns_config_content": { service: "ConfigAPI", method: "GetDNSConfigContent" },
         "validate_dns_config": { service: "ConfigAPI", method: "ValidateDNSConfig" },
-        // UI 初始化 (这些不关键，静默成功即可)
-        "update_ui_stage": { service: "__noop__", method: "" },
-        "notify_ui_ready": { service: "__noop__", method: "" },
+        // UI 初始化
+        "update_ui_stage": { service: "ConfigAPI", method: "UpdateUIStage", mapArgs: (a) => [a.stage || ""] },
+        "notify_ui_ready": { service: "ConfigAPI", method: "UpdateUIStage", mapArgs: () => ["Ready"] },
     };
 
     const mapping = INVOKE_MAP[cmd];
@@ -254,7 +254,7 @@ export async function open(options?: OpenDialogOptions | string): Promise<string
                 Filters: opts.filters?.map((f: any) => ({ DisplayName: f.name, Pattern: '*.' + (f.extensions?.[0] || '*') })) || [],
             });
             if (!result) return null;
-            return opts.multiple ? [result] : result;
+            return opts.multiple ? [result as string] : (result as string);
         }
         // Fallback: use HTML input
         return new Promise((resolve) => {
@@ -282,7 +282,7 @@ export async function save(options?: OpenDialogOptions | string): Promise<string
                 Title: opts.title || 'Save File',
                 DefaultFilename: opts.defaultPath || '',
             });
-            return result || null;
+            return (result as string) || null;
         }
     } catch (err) {
         console.error('[tauri-shim] save dialog failed:', err);

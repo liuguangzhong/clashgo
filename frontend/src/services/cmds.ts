@@ -91,11 +91,14 @@ export async function createProfile(
   item: Partial<IProfileItem>,
   fileData?: string | null,
 ) {
-  // Go 端 CreateProfile 接收单个 CreateProfileRequest 结构体
+  // Go 端 CreateProfile 接收 CreateProfileRequest 结构体
   return _ProfileAPI.CreateProfile?.({
     type: item.type ?? "local",
     name: item.name ?? "",
+    desc: item.desc ?? "",
+    url: item.url ?? "",
     content: fileData ?? "",
+    option: item.option ?? null,
   });
 }
 
@@ -121,7 +124,7 @@ export async function reorderProfile(activeId: string, overId: string) {
 }
 
 export async function updateProfile(index: string, option?: IProfileOption) {
-  return _ProfileAPI.UpdateProfile?.(index);
+  return _ProfileAPI.UpdateProfile?.(index, option ?? null);
 }
 
 export async function deleteProfile(index: string) {
@@ -150,8 +153,7 @@ export async function getRuntimeYaml() {
 }
 
 export async function getRuntimeExists() {
-  const snap = await _ConfigAPI.GetRuntimeConfig?.();
-  return snap?.exists_keys ? Object.keys(snap.exists_keys) : [];
+  return _ConfigAPI.GetRuntimeExists?.() ?? [];
 }
 
 export async function getRuntimeLogs() {
@@ -204,8 +206,7 @@ export async function getClashLogs() {
 }
 
 export async function clearLogs() {
-  // clashgo 没有单独的 clear_logs；重启 core 等效清空
-  console.warn("[ClashGo] clearLogs: not implemented, logs are in-memory");
+  return _ProxyAPI.ClearLogs?.();
 }
 
 // ── Verge Config ─────────────────────────────────────────────────────────────
@@ -311,7 +312,11 @@ export async function cmdGetProxyDelay(
 }
 
 export async function cmdTestDelay(url: string) {
-  // 通用 URL 可达性测试（非代理测试）
+  try {
+    const delay = await _ProxyAPI.TestDelay?.(url);
+    if (typeof delay === 'number') return delay;
+  } catch { /* fallback */ }
+  // fallback: 前端直接测量
   const start = Date.now();
   try {
     await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(5000) });
@@ -342,8 +347,7 @@ export async function exitApp() {
 }
 
 export async function exportDiagnosticInfo() {
-  // TODO: 实现诊断信息导出
-  console.warn("[ClashGo] exportDiagnosticInfo not yet implemented");
+  return _SystemAPI.ExportDiagnosticInfo?.();
 }
 
 export async function getSystemInfo() {
@@ -454,8 +458,11 @@ export const getRunningMode = async () => {
 };
 
 export const getAppUptime = async () => {
-  // ClashGo 未实现 uptime，返回 0
-  return 0;
+  try {
+    return await _App.GetAppUptime?.() ?? 0;
+  } catch {
+    return 0;
+  }
 };
 
 // ── 系统服务 ─────────────────────────────────────────────────────────────────
@@ -499,9 +506,7 @@ export const exit_lightweight_mode = async () => {
 
 export const isAdmin = async () => {
   try {
-    // ClashGo 没有 app_is_admin，用服务查询替代
-    const status = await _ServiceAPI.GetServiceStatus?.();
-    return status?.running ?? false;
+    return await _App.IsAdmin?.() ?? false;
   } catch {
     return false;
   }

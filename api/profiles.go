@@ -102,6 +102,13 @@ func (a *ProfileAPI) CreateProfile(req CreateProfileRequest) error {
 		Name:      &req.Name,
 		File:      &filename,
 		UpdatedAt: &now,
+		Option:    req.Option,
+	}
+	if req.Desc != "" {
+		profile.Desc = &req.Desc
+	}
+	if req.URL != "" {
+		profile.URL = &req.URL
 	}
 
 	return a.mgr.AddProfile(profile)
@@ -131,7 +138,8 @@ func (a *ProfileAPI) PatchProfilesConfig(uid string) error {
 }
 
 // UpdateProfile 从网络更新远程订阅
-func (a *ProfileAPI) UpdateProfile(uid string) error {
+// option 可为 nil，表示使用 profile 自身保存的 option
+func (a *ProfileAPI) UpdateProfile(uid string, option *config.ProfileOption) error {
 	profiles := a.mgr.GetProfiles()
 
 	var target *config.IProfile
@@ -148,7 +156,13 @@ func (a *ProfileAPI) UpdateProfile(uid string) error {
 		return fmt.Errorf("profile has no URL (local-only)")
 	}
 
-	content, extra, err := downloadProfile(*target.URL, target.Option)
+	// 使用前端传入的 option 覆盖，否则用 profile 自身的
+	downloadOpt := target.Option
+	if option != nil {
+		downloadOpt = option
+	}
+
+	content, extra, err := downloadProfile(*target.URL, downloadOpt)
 	if err != nil {
 		return fmt.Errorf("download update: %w", err)
 	}
@@ -263,9 +277,12 @@ type ImportProfileRequest struct {
 
 // CreateProfileRequest 创建本地配置请求
 type CreateProfileRequest struct {
-	Type    string `json:"type"`
-	Name    string `json:"name"`
-	Content string `json:"content,omitempty"`
+	Type    string                `json:"type"`
+	Name    string                `json:"name"`
+	Desc    string                `json:"desc,omitempty"`
+	URL     string                `json:"url,omitempty"`
+	Content string                `json:"content,omitempty"`
+	Option  *config.ProfileOption `json:"option,omitempty"`
 }
 
 // ─── 内部辅助 ─────────────────────────────────────────────────────────────────

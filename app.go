@@ -2,8 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
+	"runtime/debug"
+	goruntime "runtime"
+	"time"
 
 	"clashgo/api"
 	"clashgo/internal/config"
@@ -41,6 +45,7 @@ type App struct {
 
 	// 运行状态
 	lightweight bool // 是否处于轻量模式
+	startTime   int64 // 启动时间戳（秒）
 }
 
 // NewApp 构造 App
@@ -62,6 +67,7 @@ func NewApp() *App {
 // Startup 由 Wails 在 WebView 就绪前调用，所有模块在此初始化
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	a.startTime = time.Now().Unix()
 	log := utils.Log()
 
 	log.Info("Initializing ClashGo modules...")
@@ -325,4 +331,31 @@ func (a *App) RestartApp() {
 		return
 	}
 	runtime.Quit(a.ctx)
+}
+
+// IsAdmin 检查应用是否以管理员/root权限运行
+// 对应原: app_is_admin
+func (a *App) IsAdmin() bool {
+	if goruntime.GOOS == "windows" {
+		_, err := os.Open("\\\\.\\PHYSICALDRIVE0")
+		return err == nil
+	}
+	return os.Geteuid() == 0
+}
+
+// GetAppUptime 返回应用已运行的秒数
+// 对应原: get_app_uptime
+func (a *App) GetAppUptime() int64 {
+	return time.Now().Unix() - a.startTime
+}
+
+// ExportDiagnosticInfo 导出诊断信息文本
+// 对应原: export_diagnostic_info
+func (a *App) ExportDiagnosticInfo() string {
+	var buildInfo string
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		buildInfo = bi.GoVersion
+	}
+	return fmt.Sprintf("OS: %s\nArch: %s\nGo: %s\nUptime: %ds\nAdmin: %v",
+		goruntime.GOOS, goruntime.GOARCH, buildInfo, a.GetAppUptime(), a.IsAdmin())
 }

@@ -288,3 +288,26 @@ func (a *ProxyAPI) RestartCore() error {
 func getRuntimeConfigPath() string {
 	return utils.Dirs().RuntimeConfigPath()
 }
+
+// ClearLogs 清除内核日志缓存
+// 对应原: clear_logs
+func (a *ProxyAPI) ClearLogs() {
+	type logClearer interface{ ClearLogs() }
+	if lc, ok := coreManagerRef.(logClearer); ok {
+		lc.ClearLogs()
+	}
+}
+
+// TestDelay 对指定 URL 做连通性测试（通过 Mihomo 代理）
+// 对应原: test_delay
+func (a *ProxyAPI) TestDelay(url string) (int, error) {
+	client, err := a.mihomoClient()
+	if err != nil {
+		return -1, err
+	}
+	delay, err := client.TestDelay(context.Background(), "GLOBAL", url, 5000)
+	if err != nil {
+		return -1, err
+	}
+	return int(delay), nil
+}
