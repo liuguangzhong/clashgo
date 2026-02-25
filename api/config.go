@@ -83,19 +83,19 @@ func (a *ConfigAPI) GetClashInfo() config.ClashInfo {
 	clash := a.mgr.GetClash()
 	verge := a.mgr.GetVerge()
 
-	mixedPort := uint16(7897)
+	mixedPort := uint16(17897)
 	if verge.VergeMixedPort != nil {
 		mixedPort = *verge.VergeMixedPort
 	} else if p, ok := clash["mixed-port"].(int); ok {
 		mixedPort = uint16(p)
 	}
 
-	socksPort := uint16(7898)
+	socksPort := uint16(17898)
 	if verge.VergeSocksPort != nil {
 		socksPort = *verge.VergeSocksPort
 	}
 
-	httpPort := uint16(7899)
+	httpPort := uint16(17899)
 	if verge.VergePort != nil {
 		httpPort = *verge.VergePort
 	}

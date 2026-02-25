@@ -149,11 +149,11 @@ func DefaultVerge() IVerge {
 	uint64_24 := uint64(24)
 	uint64_30 := uint64(30)
 	uint64_10 := uint64(10)
-	uint16_7895 := uint16(7895)
-	uint16_7896 := uint16(7896)
-	uint16_7897 := uint16(7897)
-	uint16_7898 := uint16(7898)
-	uint16_7899 := uint16(7899)
+	uint16_17895 := uint16(17895)
+	uint16_17896 := uint16(17896)
+	uint16_17897 := uint16(17897)
+	uint16_17898 := uint16(17898)
+	uint16_17899 := uint16(17899)
 	int8Timeout := int16(5000)
 	themeSystem := "system"
 	langEn := "en"
@@ -180,14 +180,14 @@ func DefaultVerge() IVerge {
 		EnableSystemProxy:         &boolFalse,
 		ProxyAutoConfig:           &boolFalse,
 		ProxyHost:                 &proxyHost,
-		VergeRedirPort:            &uint16_7895,
+		VergeRedirPort:            &uint16_17895,
 		VergeRedirEnabled:         &boolFalse,
-		VergeTProxyPort:           &uint16_7896,
+		VergeTProxyPort:           &uint16_17896,
 		VergeTProxyEnabled:        &boolFalse,
-		VergeMixedPort:            &uint16_7897,
-		VergeSocksPort:            &uint16_7898,
+		VergeMixedPort:            &uint16_17897,
+		VergeSocksPort:            &uint16_17898,
 		VergeSocksEnabled:         &boolFalse,
-		VergePort:                 &uint16_7899,
+		VergePort:                 &uint16_17899,
 		VergeHttpEnabled:          &boolFalse,
 		EnableProxyGuard:          &boolFalse,
 		EnableBypassCheck:         &boolTrue,

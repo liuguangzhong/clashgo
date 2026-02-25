@@ -116,7 +116,7 @@ func (a *ConfigAPI) ValidateDNSConfig() (bool, string) {
 // 对应原: copy_clash_env
 func (a *ConfigAPI) CopyClashEnv() string {
 	clash := a.mgr.GetClash()
-	mixedPort := 7897
+	mixedPort := 17897
 	if p, ok := clash["mixed-port"].(int); ok && p > 0 {
 		mixedPort = p
 	}

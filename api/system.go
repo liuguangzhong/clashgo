@@ -276,8 +276,8 @@ func (a *SystemAPI) ViewProfileFile(filePath string) error {
 // 命名为一致性保留；内部读取 clash 配置端口，不依赖系统代理是否开启
 // Note: 推荐使用 ConfigAPI.CopyClashEnv ，这里是为了兼容老调用方式
 func (a *SystemAPI) CopyClashEnv() string {
-	// 读取配置端口（verge 优先，否则默认 7897）
-	mixedPort := 7897
+	// 读取配置端口（verge 优先，否则默认 17897）
+	mixedPort := 17897
 	// 通过 mihomoSrv 不能反向拿到 mgr，这里直接输出默认地址
 	// 实际端口取决于配置，推荐前端调用 ConfigAPI.CopyClashEnv
 	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", mixedPort)
