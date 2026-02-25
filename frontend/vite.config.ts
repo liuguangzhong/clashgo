@@ -44,17 +44,7 @@ export default defineConfig({
             },
             output: {
                 compact: true,
-                manualChunks(id) {
-                    if (!id.includes("node_modules")) return;
-                    if (id.includes("monaco-editor")) return "monaco-editor";
-                    if (id.includes("react-dom") || id.includes("react-router")) return "react-core";
-                    if (id.includes("@mui/")) return "mui";
-                    if (id.includes("@emotion/")) return "emotion";
-                    if (id.includes("@dnd-kit/")) return "dnd-kit";
-                    if (id.includes("i18next")) return "i18next";
-                    if (id.includes("lodash")) return "lodash";
-                    return "vendor";
-                },
+                inlineDynamicImports: true, // 单文件输出，无代码分割
             },
         },
     },

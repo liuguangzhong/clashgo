@@ -68,7 +68,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 18, G: 18, B: 18, A: 1},
+		BackgroundColour: &options.RGBA{R: 18, G: 18, B: 18, A: 255},
 
 		// 绑定所有后端方法到前端
 		Bind: app.Bindings(),
