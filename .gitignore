@@ -16,6 +16,8 @@ frontend/.vite/
 
 # ── Wails Build ────────────────────────
 build/bin/
+frontend/wailsjs/go/
+frontend/wailsjs/runtime/
 
 # ── IDE ────────────────────────────────
 .idea/
