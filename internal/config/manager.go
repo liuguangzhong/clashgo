@@ -381,27 +381,9 @@ func readYAMLMap(path string) (map[string]interface{}, error) {
 }
 
 // writeYAML 将结构体序列化为 YAML 并原子写入文件（带注释前缀）
-// 原子写入：先写临时文件，再 os.Rename，避免并发或崩溃导致文件损坏
+// 委托给 WriteYAMLAtomic：强制字符串引号（防折行）+ tmp→rename 原子写
 func writeYAML(path string, v interface{}, comment string) error {
-	data, err := yaml.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-
-	content := []byte(comment + "\n\n")
-	content = append(content, data...)
-
-	// 写入同目录临时文件
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, content, 0644); err != nil {
-		return fmt.Errorf("write tmp %s: %w", tmpPath, err)
-	}
-	// 原子替换
-	if err := os.Rename(tmpPath, path); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("rename %s: %w", path, err)
-	}
-	return nil
+	return WriteYAMLAtomic(path, v, comment)
 }
 
 // LoadVergeRaw 在 Manager 初始化之前快速读取 verge.yaml（用于 app.StartHidden()）

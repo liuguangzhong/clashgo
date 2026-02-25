@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"clashgo/internal/config"
 	"clashgo/internal/enhance"
 	"clashgo/internal/utils"
 
@@ -39,8 +40,8 @@ func (a *ProfileAPI) SaveProfileFileWithValidation(uid string, content string) e
 		return fmt.Errorf("read original: %w", err)
 	}
 
-	// 写入新内容
-	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+	// 写入新内容（原子写入）
+	if err := config.WriteFileAtomic(filePath, []byte(content)); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 
@@ -54,8 +55,8 @@ func (a *ProfileAPI) SaveProfileFileWithValidation(uid string, content string) e
 	}
 
 	if validErr != nil {
-		// 验证失败，回滚原内容
-		_ = os.WriteFile(filePath, original, 0644)
+		// 验证失败，回滚原内容（原子写入）
+		_ = config.WriteFileAtomic(filePath, original)
 		return fmt.Errorf("validation failed (content restored): %w", validErr)
 	}
 

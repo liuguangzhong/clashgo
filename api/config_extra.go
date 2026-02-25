@@ -27,7 +27,7 @@ func (a *ConfigAPI) SaveDNSConfig(dnsConfig map[string]interface{}) error {
 		return fmt.Errorf("marshal dns config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := config.WriteFileAtomic(path, data); err != nil {
 		return fmt.Errorf("write dns config: %w", err)
 	}
 
@@ -230,4 +230,3 @@ func (a *ConfigAPI) FileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
-

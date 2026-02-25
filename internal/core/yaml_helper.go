@@ -2,12 +2,13 @@ package core
 
 import (
 	"fmt"
-	"os"
+
+	"clashgo/internal/config"
 
 	"gopkg.in/yaml.v3"
 )
 
-// writeConfigYAML 将配置 map 序列化为 YAML 写入文件
+// writeConfigYAML 将配置 map 序列化为 YAML 并原子写入文件
 func writeConfigYAML(path string, cfg map[string]interface{}) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -15,8 +16,6 @@ func writeConfigYAML(path string, cfg map[string]interface{}) error {
 	}
 	header := []byte("# ClashGo Runtime Config - Auto Generated\n\n")
 	content := append(header, data...)
-	if err := os.WriteFile(path, content, 0644); err != nil {
-		return fmt.Errorf("write runtime config: %w", err)
-	}
-	return nil
+	// 原子写入：防止内核启动时读到半写的文件
+	return config.WriteFileAtomic(path, content)
 }
