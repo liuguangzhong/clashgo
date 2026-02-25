@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime/debug"
 	goruntime "runtime"
+	"runtime/debug"
 	"time"
 
 	"clashgo/api"
@@ -38,13 +38,14 @@ type App struct {
 
 	// 内部模块
 	coreManager *core.Manager
+	cfgManager  *config.Manager
 	sysProxy    proxy.SysProxy
 	hotkeyMgr   *hotkey.Manager
 	trayMgr     *tray.Manager
 	appUpdater  *updater.Updater
 
 	// 运行状态
-	lightweight bool // 是否处于轻量模式
+	lightweight bool  // 是否处于轻量模式
 	startTime   int64 // 启动时间戳（秒）
 }
 
@@ -98,6 +99,7 @@ func (a *App) Startup(ctx context.Context) {
 	})
 
 	// 4. 代理核心
+	a.cfgManager = cfgManager
 	a.coreManager = core.NewManager(cfgManager)
 	if err := a.coreManager.Start(ctx); err != nil {
 		log.Warn("Failed to start proxy core on startup", zap.Error(err))
@@ -155,8 +157,9 @@ func (a *App) Startup(ctx context.Context) {
 	// 10. 注入 core.Manager 到 API 层
 	api.SetCoreLifecycle(a.coreManager)
 
-	// 10.5 注入 Verge 变更回调：系统代理 + 托盘更新
+	// 10.5 注入 Verge 变更回调：系统代理 + TUN 模式 + 托盘更新
 	api.SetOnVergeChanged(func(verge config.IVerge) {
+		// ── 系统代理 ──
 		sysEnabled := verge.EnableSystemProxy != nil && *verge.EnableSystemProxy
 		if sysEnabled {
 			if err := a.sysProxy.Apply(verge); err != nil {
@@ -171,6 +174,30 @@ func (a *App) Startup(ctx context.Context) {
 				log.Info("System proxy reset")
 			}
 		}
+
+		// ── TUN 模式 ──
+		if verge.EnableTunMode != nil {
+			tunEnabled := *verge.EnableTunMode
+			log.Info("TUN mode change requested", zap.Bool("enable", tunEnabled))
+
+			// 将 enable_tun_mode 写入 clash 配置的 tun.enable
+			tunPatch := map[string]interface{}{
+				"tun": map[string]interface{}{
+					"enable": tunEnabled,
+				},
+			}
+			if err := a.cfgManager.PatchClash(tunPatch); err != nil {
+				log.Warn("Failed to patch TUN config", zap.Error(err))
+			}
+
+			// 热加载配置让 Mihomo 生效
+			if err := a.coreManager.UpdateConfig(); err != nil {
+				log.Warn("Failed to reload config for TUN", zap.Error(err))
+			} else {
+				log.Info("TUN mode updated", zap.Bool("enable", tunEnabled))
+			}
+		}
+
 		// 更新托盘菜单
 		if a.trayMgr != nil {
 			a.trayMgr.UpdateMenu()

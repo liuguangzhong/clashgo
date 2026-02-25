@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"syscall"
+	"unsafe"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -32,7 +33,7 @@ func (p *windowsProxy) Apply(verge config.IVerge) error {
 	if verge.ProxyHost != nil {
 		host = *verge.ProxyHost
 	}
-	port := 7897
+	port := 17897
 	if verge.VergeMixedPort != nil {
 		port = int(*verge.VergeMixedPort)
 	}
@@ -103,6 +104,25 @@ func hiddenCmd(name string, args ...string) *exec.Cmd {
 }
 
 // refreshInetSettings 通知所有应用系统代理设置已更改
+// 使用 InternetSetOption Win32 API，不需要管理员权限
 func refreshInetSettings() error {
-	return hiddenCmd("netsh", "winhttp", "import", "proxy", "source=ie").Run()
+	wininet, err := syscall.LoadDLL("wininet.dll")
+	if err != nil {
+		// fallback: 忽略错误，注册表已设置好
+		return nil
+	}
+	defer wininet.Release()
+
+	proc, err := wininet.FindProc("InternetSetOptionW")
+	if err != nil {
+		return nil
+	}
+
+	// INTERNET_OPTION_SETTINGS_CHANGED = 39
+	// INTERNET_OPTION_REFRESH = 37
+	proc.Call(0, 39, 0, 0)
+	proc.Call(0, 37, 0, 0)
+
+	_ = unsafe.Pointer(nil) // keep import
+	return nil
 }
