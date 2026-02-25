@@ -259,6 +259,24 @@ bash scripts/build.sh
 
 > 💡 二进制已内嵌 Mihomo 代理内核，无需额外下载。
 
+### 第五步：启动运行
+
+编译脚本会自动将程序安装到系统路径，之后在**任意终端**直接运行：
+
+```bash
+# Linux / macOS — 编译后已自动安装到 /usr/local/bin/
+clashgo
+
+# Windows — 编译后已自动安装到 %LOCALAPPDATA%\ClashGo\（需重新打开终端）
+clashgo
+```
+
+> 🛡️ **TUN 模式说明（Linux）**：编译脚本已自动设置 `cap_net_admin` 网络权限，TUN 模式无需 sudo 即可开启。
+> 如果手动复制了二进制文件，需要手动设置权限：
+> ```bash
+> sudo setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+ep /usr/local/bin/clashgo
+> ```
+
 ### 一键启动（开发模式）
 
 开发模式提供**前后端热更新**：前端修改即时反映，后端修改自动重编译。
