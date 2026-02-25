@@ -56,6 +56,11 @@ const LazySystemInfoCard = lazy(() =>
     default: module.SystemInfoCard,
   })),
 );
+const LazyProxyIpCard = lazy(() =>
+  import("@/components/home/proxy-ip-card").then((module) => ({
+    default: module.ProxyIpCard,
+  })),
+);
 
 // 定义首页卡片设置接口
 interface HomeCardsSettings {
@@ -69,6 +74,7 @@ interface HomeCardsSettings {
   systeminfo: boolean;
   test: boolean;
   ip: boolean;
+  proxyip: boolean;
   [key: string]: boolean;
 }
 
@@ -233,6 +239,7 @@ const HomePage = () => {
       systeminfo: true,
       test: true,
       ip: true,
+      proxyip: true,
     }),
     [],
   );
@@ -341,6 +348,12 @@ const HomePage = () => {
         "ip",
         <Suspense fallback={<Skeleton variant="rectangular" height={200} />}>
           <LazyIpInfoCard />
+        </Suspense>,
+      ),
+      renderCard(
+        "proxyip",
+        <Suspense fallback={<Skeleton variant="rectangular" height={200} />}>
+          <LazyProxyIpCard />
         </Suspense>,
       ),
       renderCard(

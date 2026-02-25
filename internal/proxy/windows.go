@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strconv"
+	"syscall"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -94,8 +95,15 @@ func (p *windowsProxy) GetCurrentProxy() (*ProxyInfo, error) {
 	return info, nil
 }
 
+// hiddenCmd 创建一个隐藏控制台窗口的 exec.Cmd
+func hiddenCmd(name string, args ...string) *exec.Cmd {
+	cmd := exec.Command(name, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd
+}
+
 // refreshInetSettings 通知所有应用系统代理设置已更改
 func refreshInetSettings() error {
-	// 调用 netsh 刷新
-	return exec.Command("netsh", "winhttp", "import", "proxy", "source=ie").Start()
+	return hiddenCmd("netsh", "winhttp", "import", "proxy", "source=ie").Start()
 }
+
