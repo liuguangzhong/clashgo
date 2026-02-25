@@ -29,18 +29,20 @@ func newLinuxProxy() SysProxy {
 
 // detectDesktop 检测当前桌面环境
 func (p *linuxProxy) detectDesktop() {
-	// 检查 GNOME
-	conn, err := dbus.ConnectSessionBus()
-	if err == nil {
-		obj := conn.Object("org.gnome.system.proxy", "/org/gnome/system/proxy")
-		call := obj.Call("org.freedesktop.DBus.Peer.Ping", 0)
-		if call.Err == nil {
-			p.conn = conn
+	// 优先检测 gsettings（GNOME / Cinnamon / MATE / Unity / Budgie 等）
+	if _, err := exec.LookPath("gsettings"); err == nil {
+		// 验证 schema 存在
+		out, err := exec.Command("gsettings", "get", "org.gnome.system.proxy", "mode").Output()
+		if err == nil && len(out) > 0 {
 			p.desktopType = "gnome"
-			utils.Log().Info("Detected GNOME desktop, using D-Bus for system proxy")
+			// 尝试连接 D-Bus（可选，用于更快的设置）
+			conn, err := dbus.ConnectSessionBus()
+			if err == nil {
+				p.conn = conn
+			}
+			utils.Log().Info("Detected GNOME-compatible desktop (gsettings), using for system proxy")
 			return
 		}
-		conn.Close()
 	}
 
 	// 检查 KDE
@@ -136,9 +138,6 @@ func (p *linuxProxy) GetCurrentProxy() (*ProxyInfo, error) {
 // ─── GNOME D-Bus 实现 ─────────────────────────────────────────────────────────
 
 func (p *linuxProxy) applyGNOME(host string, port int, bypass string, pac bool, verge config.IVerge) error {
-	if p.conn == nil {
-		return fmt.Errorf("D-Bus connection not available")
-	}
 
 	if pac {
 		// PAC 模式
@@ -220,20 +219,19 @@ func (p *linuxProxy) setGNOMEBypass(bypass string) error {
 }
 
 func (p *linuxProxy) setGNOMEProp(path, iface, prop string, val interface{}) error {
-	if p.conn == nil {
-		return fmt.Errorf("D-Bus not connected")
-	}
-	obj := p.conn.Object("org.gnome.system.proxy", dbus.ObjectPath(path))
-	call := obj.Call("org.freedesktop.DBus.Properties.Set", 0, iface, prop, dbus.MakeVariant(val))
-	if call.Err != nil {
-		utils.Log().Warn("D-Bus set property failed",
-			zap.String("path", path),
+	if p.conn != nil {
+		obj := p.conn.Object("org.gnome.system.proxy", dbus.ObjectPath(path))
+		call := obj.Call("org.freedesktop.DBus.Properties.Set", 0, iface, prop, dbus.MakeVariant(val))
+		if call.Err == nil {
+			return nil
+		}
+		utils.Log().Debug("D-Bus set property failed, falling back to gsettings",
 			zap.String("prop", prop),
 			zap.Error(call.Err))
-		// fallback: 尝试 gsettings CLI
-		return p.setGSetting(iface[len("org.gnome."):], prop, fmt.Sprintf("%v", val))
 	}
-	return nil
+	// fallback: gsettings CLI
+	schema := iface[len("org.gnome."):]
+	return p.setGSetting(schema, prop, fmt.Sprintf("%v", val))
 }
 
 // setGSetting 通过 gsettings CLI 设置（D-Bus fallback）
