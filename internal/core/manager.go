@@ -9,6 +9,7 @@ import (
 
 	"clashgo/internal/config"
 	"clashgo/internal/enhance"
+	"clashgo/internal/geodata"
 	"clashgo/internal/utils"
 
 	mihomoConstant "github.com/metacubex/mihomo/constant"
@@ -95,6 +96,9 @@ func (m *Manager) Start(ctx context.Context) error {
 	utils.Log().Info("Starting Mihomo in-process",
 		zap.String("homeDir", homeDir),
 	)
+
+	// 预下载 GeoIP/GeoSite 数据文件（多镜像 fallback，确保国内可用）
+	geodata.EnsureGeoData(homeDir)
 
 	runtimePath, err := m.generateRuntimeConfig()
 	if err != nil {
