@@ -1,8 +1,9 @@
-import {
-  check,
-  type CheckOptions,
-  type Update,
-} from "@tauri-apps/plugin-updater";
+/**
+ * ClashGo 自动更新检查（替代 Tauri plugin-updater）
+ *
+ * 通过 GitHub/Gitee API 检查最新 Release，比对版本号。
+ * 多源 fallback：先查 GitHub，失败查 Gitee。
+ */
 
 import { version as appVersion } from "@root/package.json";
 
@@ -103,53 +104,96 @@ export const compareVersions = (
   return compareVersionParts(partsA, partsB);
 };
 
-export const resolveRemoteVersion = (update: Update): string | null => {
-  const primary = ensureSemver(update.version);
-  if (primary) return primary;
+// ── Release 信息 ─────────────────────────────────────────────────────────
 
-  const fallbackPrimary = extractSemver(update.version);
-  if (fallbackPrimary) return fallbackPrimary;
+export interface UpdateInfo {
+  version: string;
+  body: string;
+  date: string;
+  available: boolean;
+  downloadUrl: string;
+}
 
-  const raw = update.rawJson ?? {};
-  const rawVersion = ensureSemver(
-    typeof raw.version === "string" ? raw.version : null,
-  );
-  if (rawVersion) return rawVersion;
+// ── 多源检查（GitHub → Gitee fallback）────────────────────────────────────
 
-  const tagVersion = extractSemver(
-    typeof raw.tag_name === "string" ? raw.tag_name : null,
-  );
-  if (tagVersion) return tagVersion;
-
-  const nameVersion = extractSemver(
-    typeof raw.name === "string" ? raw.name : null,
-  );
-  if (nameVersion) return nameVersion;
-
-  return null;
-};
+const RELEASE_SOURCES = [
+  {
+    name: "GitHub",
+    url: "https://api.github.com/repos/liuguangzhong/clashgo/releases/latest",
+    parse: (data: any): UpdateInfo => ({
+      version: normalizeVersion(data.tag_name) || "",
+      body: data.body || "",
+      date: data.published_at || "",
+      available: false,
+      downloadUrl: data.html_url || "",
+    }),
+  },
+  {
+    name: "Gitee",
+    url: "https://gitee.com/api/v5/repos/open-nexusai/clashgo/releases/latest",
+    parse: (data: any): UpdateInfo => ({
+      version: normalizeVersion(data.tag_name) || "",
+      body: data.body || "",
+      date: data.created_at || "",
+      available: false,
+      downloadUrl: `https://gitee.com/open-nexusai/clashgo/releases/tag/${data.tag_name}`,
+    }),
+  },
+];
 
 const localVersionNormalized = normalizeVersion(appVersion);
 
-export const checkUpdateSafe = async (
-  options?: CheckOptions,
-): Promise<Update | null> => {
-  const result = await check({ ...(options ?? {}), allowDowngrades: false });
-  if (!result) return null;
+export const checkUpdateSafe = async (): Promise<UpdateInfo | null> => {
+  let lastError: unknown = null;
 
-  const remoteVersion = resolveRemoteVersion(result);
-  const comparison = compareVersions(remoteVersion, localVersionNormalized);
-
-  if (comparison !== null && comparison <= 0) {
+  for (const source of RELEASE_SOURCES) {
     try {
-      await result.close();
+      console.debug(`[updater] Checking ${source.name}: ${source.url}`);
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const resp = await fetch(source.url, {
+        signal: controller.signal,
+        headers: { Accept: "application/json" },
+      });
+      clearTimeout(timeoutId);
+
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status} from ${source.name}`);
+      }
+
+      const data = await resp.json();
+      const info = source.parse(data);
+
+      if (!info.version) {
+        throw new Error(`No version found from ${source.name}`);
+      }
+
+      const remoteVersion = ensureSemver(info.version) || info.version;
+      const cmp = compareVersions(remoteVersion, localVersionNormalized);
+
+      if (cmp !== null && cmp > 0) {
+        info.available = true;
+        info.version = remoteVersion;
+        console.info(
+          `[updater] New version available: ${remoteVersion} (current: ${localVersionNormalized}) from ${source.name}`,
+        );
+        return info;
+      }
+
+      console.debug(
+        `[updater] Up to date (remote: ${remoteVersion}, local: ${localVersionNormalized}) from ${source.name}`,
+      );
+      return null;
     } catch (err) {
-      console.warn("[updater] failed to close stale update resource", err);
+      console.warn(`[updater] ${source.name} check failed:`, err);
+      lastError = err;
     }
-    return null;
   }
 
-  return result;
+  console.error("[updater] All sources failed:", lastError);
+  return null;
 };
 
-export type { CheckOptions };
+export type CheckOptions = Record<string, unknown>;
