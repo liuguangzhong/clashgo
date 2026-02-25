@@ -380,7 +380,8 @@ func readYAMLMap(path string) (map[string]interface{}, error) {
 	return out, nil
 }
 
-// writeYAML 将结构体序列化为 YAML 并写入文件（带注释前缀）
+// writeYAML 将结构体序列化为 YAML 并原子写入文件（带注释前缀）
+// 原子写入：先写临时文件，再 os.Rename，避免并发或崩溃导致文件损坏
 func writeYAML(path string, v interface{}, comment string) error {
 	data, err := yaml.Marshal(v)
 	if err != nil {
@@ -390,8 +391,15 @@ func writeYAML(path string, v interface{}, comment string) error {
 	content := []byte(comment + "\n\n")
 	content = append(content, data...)
 
-	if err := os.WriteFile(path, content, 0644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	// 写入同目录临时文件
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, content, 0644); err != nil {
+		return fmt.Errorf("write tmp %s: %w", tmpPath, err)
+	}
+	// 原子替换
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("rename %s: %w", path, err)
 	}
 	return nil
 }

@@ -22,15 +22,15 @@ type IVerge struct {
 	MenuIcon       *string `yaml:"menu_icon,omitempty" json:"menu_icon,omitempty"`
 
 	// 代理设置
-	EnableSystemProxy   *bool   `yaml:"enable_system_proxy,omitempty" json:"enable_system_proxy,omitempty"`
-	ProxyAutoConfig     *bool   `yaml:"proxy_auto_config,omitempty" json:"proxy_auto_config,omitempty"`
-	PacFileContent      *string `yaml:"pac_file_content,omitempty" json:"pac_file_content,omitempty"`
-	ProxyHost           *string `yaml:"proxy_host,omitempty" json:"proxy_host,omitempty"`
-	SystemProxyBypass   *string `yaml:"system_proxy_bypass,omitempty" json:"system_proxy_bypass,omitempty"`
-	UseDefaultBypass    *bool   `yaml:"use_default_bypass,omitempty" json:"use_default_bypass,omitempty"`
-	EnableProxyGuard    *bool   `yaml:"enable_proxy_guard,omitempty" json:"enable_proxy_guard,omitempty"`
-	ProxyGuardDuration  *uint64 `yaml:"proxy_guard_duration,omitempty" json:"proxy_guard_duration,omitempty"`
-	EnableBypassCheck   *bool   `yaml:"enable_bypass_check,omitempty" json:"enable_bypass_check,omitempty"`
+	EnableSystemProxy  *bool   `yaml:"enable_system_proxy,omitempty" json:"enable_system_proxy,omitempty"`
+	ProxyAutoConfig    *bool   `yaml:"proxy_auto_config,omitempty" json:"proxy_auto_config,omitempty"`
+	PacFileContent     *string `yaml:"pac_file_content,omitempty" json:"pac_file_content,omitempty"`
+	ProxyHost          *string `yaml:"proxy_host,omitempty" json:"proxy_host,omitempty"`
+	SystemProxyBypass  *string `yaml:"system_proxy_bypass,omitempty" json:"system_proxy_bypass,omitempty"`
+	UseDefaultBypass   *bool   `yaml:"use_default_bypass,omitempty" json:"use_default_bypass,omitempty"`
+	EnableProxyGuard   *bool   `yaml:"enable_proxy_guard,omitempty" json:"enable_proxy_guard,omitempty"`
+	ProxyGuardDuration *uint64 `yaml:"proxy_guard_duration,omitempty" json:"proxy_guard_duration,omitempty"`
+	EnableBypassCheck  *bool   `yaml:"enable_bypass_check,omitempty" json:"enable_bypass_check,omitempty"`
 
 	// TUN 模式
 	EnableTunMode *bool `yaml:"enable_tun_mode,omitempty" json:"enable_tun_mode,omitempty"`
@@ -57,8 +57,8 @@ type IVerge struct {
 	ClashCore *string `yaml:"clash_core,omitempty" json:"clash_core,omitempty"`
 
 	// 热键
-	Hotkeys           *[]string `yaml:"hotkeys,omitempty" json:"hotkeys,omitempty"`
-	EnableGlobalHotkey *bool    `yaml:"enable_global_hotkey,omitempty" json:"enable_global_hotkey,omitempty"`
+	Hotkeys            *[]string `yaml:"hotkeys,omitempty" json:"hotkeys,omitempty"`
+	EnableGlobalHotkey *bool     `yaml:"enable_global_hotkey,omitempty" json:"enable_global_hotkey,omitempty"`
 
 	// 连接行为
 	AutoCloseConnection *bool `yaml:"auto_close_connection,omitempty" json:"auto_close_connection,omitempty"`
@@ -87,10 +87,10 @@ type IVerge struct {
 	WebDAVPassword *string `yaml:"webdav_password,omitempty" json:"webdav_password,omitempty"`
 
 	// 托盘
-	SysproxyTrayIcon         *bool   `yaml:"sysproxy_tray_icon,omitempty" json:"sysproxy_tray_icon,omitempty"`
-	TunTrayIcon              *bool   `yaml:"tun_tray_icon,omitempty" json:"tun_tray_icon,omitempty"`
-	TrayProxyGroupsDisplay   *string `yaml:"tray_proxy_groups_display_mode,omitempty" json:"tray_proxy_groups_display_mode,omitempty"`
-	TrayInlineOutboundModes  *bool   `yaml:"tray_inline_outbound_modes,omitempty" json:"tray_inline_outbound_modes,omitempty"`
+	SysproxyTrayIcon        *bool   `yaml:"sysproxy_tray_icon,omitempty" json:"sysproxy_tray_icon,omitempty"`
+	TunTrayIcon             *bool   `yaml:"tun_tray_icon,omitempty" json:"tun_tray_icon,omitempty"`
+	TrayProxyGroupsDisplay  *string `yaml:"tray_proxy_groups_display_mode,omitempty" json:"tray_proxy_groups_display_mode,omitempty"`
+	TrayInlineOutboundModes *bool   `yaml:"tray_inline_outbound_modes,omitempty" json:"tray_inline_outbound_modes,omitempty"`
 
 	// 轻量模式
 	EnableAutoLightWeightMode *bool   `yaml:"enable_auto_light_weight_mode,omitempty" json:"enable_auto_light_weight_mode,omitempty"`
@@ -166,51 +166,51 @@ func DefaultVerge() IVerge {
 	coreDefault := "verge-mihomo"
 
 	return IVerge{
-		AppLogMaxSize:            ptrUint64(128),
-		AppLogMaxCount:           ptrInt(8),
-		ClashCore:                &coreDefault,
-		Language:                 &langEn,
-		ThemeMode:                &themeSystem,
-		StartPage:                &startPage,
-		NoticePosition:           &noticePos,
-		MenuIcon:                 &menuIcon,
-		CollapseNavbar:           &boolFalse,
-		EnableAutoLaunch:         &boolFalse,
-		EnableSilentStart:        &boolFalse,
-		EnableSystemProxy:        &boolFalse,
-		ProxyAutoConfig:          &boolFalse,
-		ProxyHost:                &proxyHost,
-		VergeRedirPort:           &uint16_7895,
-		VergeRedirEnabled:        &boolFalse,
-		VergeTProxyPort:          &uint16_7896,
-		VergeTProxyEnabled:       &boolFalse,
-		VergeMixedPort:           &uint16_7897,
-		VergeSocksPort:           &uint16_7898,
-		VergeSocksEnabled:        &boolFalse,
-		VergePort:                &uint16_7899,
-		VergeHttpEnabled:         &boolFalse,
-		EnableProxyGuard:         &boolFalse,
-		EnableBypassCheck:        &boolTrue,
-		UseDefaultBypass:         &boolTrue,
-		ProxyGuardDuration:       &uint64_30,
-		AutoCloseConnection:      &boolTrue,
-		AutoCheckUpdate:          &boolTrue,
-		DefaultLatencyTest:       &defaultLatency,
-		DefaultLatencyTimeout:    &int8Timeout,
-		EnableBuiltinEnhanced:    &boolTrue,
-		AutoLogClean:             &int32Two,
-		EnableAutoBackupSchedule: &boolFalse,
-		AutoBackupIntervalHours:  &uint64_24,
-		AutoBackupOnChange:       &boolTrue,
-		EnableGlobalHotkey:       &boolTrue,
-		SysproxyTrayIcon:         &boolFalse,
-		TunTrayIcon:              &boolFalse,
-		TrayProxyGroupsDisplay:   &displayMode,
-		TrayInlineOutboundModes:  &boolFalse,
+		AppLogMaxSize:             ptrUint64(128),
+		AppLogMaxCount:            ptrInt(8),
+		ClashCore:                 &coreDefault,
+		Language:                  &langEn,
+		ThemeMode:                 &themeSystem,
+		StartPage:                 &startPage,
+		NoticePosition:            &noticePos,
+		MenuIcon:                  &menuIcon,
+		CollapseNavbar:            &boolFalse,
+		EnableAutoLaunch:          &boolFalse,
+		EnableSilentStart:         &boolFalse,
+		EnableSystemProxy:         &boolFalse,
+		ProxyAutoConfig:           &boolFalse,
+		ProxyHost:                 &proxyHost,
+		VergeRedirPort:            &uint16_7895,
+		VergeRedirEnabled:         &boolFalse,
+		VergeTProxyPort:           &uint16_7896,
+		VergeTProxyEnabled:        &boolFalse,
+		VergeMixedPort:            &uint16_7897,
+		VergeSocksPort:            &uint16_7898,
+		VergeSocksEnabled:         &boolFalse,
+		VergePort:                 &uint16_7899,
+		VergeHttpEnabled:          &boolFalse,
+		EnableProxyGuard:          &boolFalse,
+		EnableBypassCheck:         &boolTrue,
+		UseDefaultBypass:          &boolTrue,
+		ProxyGuardDuration:        &uint64_30,
+		AutoCloseConnection:       &boolTrue,
+		AutoCheckUpdate:           &boolTrue,
+		DefaultLatencyTest:        &defaultLatency,
+		DefaultLatencyTimeout:     &int8Timeout,
+		EnableBuiltinEnhanced:     &boolTrue,
+		AutoLogClean:              &int32Two,
+		EnableAutoBackupSchedule:  &boolFalse,
+		AutoBackupIntervalHours:   &uint64_24,
+		AutoBackupOnChange:        &boolTrue,
+		EnableGlobalHotkey:        &boolTrue,
+		SysproxyTrayIcon:          &boolFalse,
+		TunTrayIcon:               &boolFalse,
+		TrayProxyGroupsDisplay:    &displayMode,
+		TrayInlineOutboundModes:   &boolFalse,
 		EnableAutoLightWeightMode: &boolFalse,
-		AutoLightWeightMinutes:   &uint64_10,
-		EnableDNSSettings:        &boolFalse,
-		EnableExternalController: &boolFalse,
+		AutoLightWeightMinutes:    &uint64_10,
+		EnableDNSSettings:         &boolFalse,
+		EnableExternalController:  &boolTrue,
 	}
 }
 
@@ -236,44 +236,44 @@ type IProfiles struct {
 
 // IProfile 单个订阅/配置文件
 type IProfile struct {
-	UID         *string    `yaml:"uid,omitempty" json:"uid,omitempty"`
-	Type        *string    `yaml:"type,omitempty" json:"type,omitempty"` // "remote" | "local" | "merge" | "script"
-	Name        *string    `yaml:"name,omitempty" json:"name,omitempty"`
-	Desc        *string    `yaml:"desc,omitempty" json:"desc,omitempty"`
-	File        *string    `yaml:"file,omitempty" json:"file,omitempty"`
-	URL         *string    `yaml:"url,omitempty" json:"url,omitempty"`
-	Selected    []Selected `yaml:"selected,omitempty" json:"selected,omitempty"`
-	Extra       *ProfileExtra `yaml:"extra,omitempty" json:"extra,omitempty"`
-	UpdatedAt   *time.Time `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
-	Interval    *uint64    `yaml:"interval,omitempty" json:"interval,omitempty"` // 自动更新间隔（秒）
-	Option      *ProfileOption `yaml:"option,omitempty" json:"option,omitempty"`
+	UID       *string        `yaml:"uid,omitempty" json:"uid,omitempty"`
+	Type      *string        `yaml:"type,omitempty" json:"type,omitempty"` // "remote" | "local" | "merge" | "script"
+	Name      *string        `yaml:"name,omitempty" json:"name,omitempty"`
+	Desc      *string        `yaml:"desc,omitempty" json:"desc,omitempty"`
+	File      *string        `yaml:"file,omitempty" json:"file,omitempty"`
+	URL       *string        `yaml:"url,omitempty" json:"url,omitempty"`
+	Selected  []Selected     `yaml:"selected,omitempty" json:"selected,omitempty"`
+	Extra     *ProfileExtra  `yaml:"extra,omitempty" json:"extra,omitempty"`
+	UpdatedAt *time.Time     `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
+	Interval  *uint64        `yaml:"interval,omitempty" json:"interval,omitempty"` // 自动更新间隔（秒）
+	Option    *ProfileOption `yaml:"option,omitempty" json:"option,omitempty"`
 	// chain 配置
-	CurrentMerge  *string `yaml:"current_merge,omitempty" json:"current_merge,omitempty"`
-	CurrentScript *string `yaml:"current_script,omitempty" json:"current_script,omitempty"`
-	CurrentRules  *string `yaml:"current_rules,omitempty" json:"current_rules,omitempty"`
+	CurrentMerge   *string `yaml:"current_merge,omitempty" json:"current_merge,omitempty"`
+	CurrentScript  *string `yaml:"current_script,omitempty" json:"current_script,omitempty"`
+	CurrentRules   *string `yaml:"current_rules,omitempty" json:"current_rules,omitempty"`
 	CurrentProxies *string `yaml:"current_proxies,omitempty" json:"current_proxies,omitempty"`
-	CurrentGroups *string `yaml:"current_groups,omitempty" json:"current_groups,omitempty"`
+	CurrentGroups  *string `yaml:"current_groups,omitempty" json:"current_groups,omitempty"`
 }
 
 // Selected 记录代理组选择
 type Selected struct {
-	Name  string `yaml:"name" json:"name"`
-	Now   string `yaml:"now" json:"now"`
+	Name string `yaml:"name" json:"name"`
+	Now  string `yaml:"now" json:"now"`
 }
 
 // ProfileExtra 订阅元数据（从响应头解析）
 type ProfileExtra struct {
-	Upload   int64  `yaml:"upload" json:"upload"`
-	Download int64  `yaml:"download" json:"download"`
-	Total    int64  `yaml:"total" json:"total"`
-	Expire   int64  `yaml:"expire" json:"expire"`
+	Upload   int64 `yaml:"upload" json:"upload"`
+	Download int64 `yaml:"download" json:"download"`
+	Total    int64 `yaml:"total" json:"total"`
+	Expire   int64 `yaml:"expire" json:"expire"`
 }
 
 // ProfileOption 订阅下载选项
 type ProfileOption struct {
-	UserAgent    *string `yaml:"user_agent,omitempty" json:"user_agent,omitempty"`
-	WithProxy    *bool   `yaml:"with_proxy,omitempty" json:"with_proxy,omitempty"`
-	SelfProxy    *bool   `yaml:"self_proxy,omitempty" json:"self_proxy,omitempty"`
+	UserAgent      *string `yaml:"user_agent,omitempty" json:"user_agent,omitempty"`
+	WithProxy      *bool   `yaml:"with_proxy,omitempty" json:"with_proxy,omitempty"`
+	SelfProxy      *bool   `yaml:"self_proxy,omitempty" json:"self_proxy,omitempty"`
 	UpdateInterval *uint64 `yaml:"update_interval,omitempty" json:"update_interval,omitempty"`
 }
 
@@ -288,8 +288,8 @@ type ClashInfo struct {
 
 // RuntimeConfig 运行时配置（增强后的完整配置）
 type RuntimeConfig struct {
-	Config    IClashBase        `json:"config"`
-	ExistsKeys map[string]bool  `json:"exists_keys"`
+	Config     IClashBase             `json:"config"`
+	ExistsKeys map[string]bool        `json:"exists_keys"`
 	ChainLogs  map[string][][2]string `json:"chain_logs"`
 	mu         sync.RWMutex
 }
