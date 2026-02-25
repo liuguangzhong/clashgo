@@ -33,4 +33,13 @@ echo "  🔧 后端热更新: Wails Auto-rebuild"
 echo "  🌐 按 Ctrl+C 停止"
 echo ""
 
-exec wails dev
+# Linux 上检测 webkit2gtk 版本
+WAILS_TAGS=""
+if [ "$(uname -s)" = "Linux" ]; then
+    if pkg-config --exists webkit2gtk-4.1 2>/dev/null && ! pkg-config --exists webkit2gtk-4.0 2>/dev/null; then
+        info "检测到 webkit2gtk-4.1，添加 -tags webkit2_41"
+        WAILS_TAGS="-tags webkit2_41"
+    fi
+fi
+
+exec wails dev $WAILS_TAGS

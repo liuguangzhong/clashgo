@@ -154,14 +154,26 @@ case "$OS" in
             echo "    Arch:          sudo pacman -S pkgconf"
         fi
 
-        # webkit2gtk
-        check_linux_dev_lib \
-            "webkit2gtk-4.1" \
-            "libwebkit2gtk-4.1-dev" \
-            "libwebkit2gtk-4.1-0" \
-            "webkit2gtk4.1-devel" \
-            "webkit2gtk-4.1" \
-            "libwebkit2gtk-4.1"
+        # webkit2gtk (4.0 或 4.1 都行，构建脚本会自动选择正确的 tag)
+        if (command -v pkg-config >/dev/null 2>&1 && (pkg-config --exists webkit2gtk-4.1 2>/dev/null || pkg-config --exists webkit2gtk-4.0 2>/dev/null)); then
+            if pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+                ok "webkit2gtk-4.1 (dev)"
+            else
+                ok "webkit2gtk-4.0 (dev)"
+            fi
+        elif command -v dpkg >/dev/null 2>&1 && (dpkg -s libwebkit2gtk-4.1-dev >/dev/null 2>&1 || dpkg -s libwebkit2gtk-4.0-dev >/dev/null 2>&1); then
+            ok "webkit2gtk (dev) [dpkg]"
+        elif command -v dpkg >/dev/null 2>&1 && (dpkg -s libwebkit2gtk-4.1-0 >/dev/null 2>&1 || dpkg -s libwebkit2gtk-4.0-0 >/dev/null 2>&1); then
+            warn "webkit2gtk: 运行时包已安装，但编译需要开发包 (-dev)"
+            echo "    sudo apt install libwebkit2gtk-4.1-dev"
+            ERRORS=$((ERRORS+1))
+        else
+            fail "webkit2gtk 未安装"
+            echo "    Ubuntu/Debian: sudo apt install libwebkit2gtk-4.1-dev"
+            echo "    Fedora:        sudo dnf install webkit2gtk4.1-devel"
+            echo "    Arch:          sudo pacman -S webkit2gtk-4.1"
+            ERRORS=$((ERRORS+1))
+        fi
 
         # GTK 3
         check_linux_dev_lib \
