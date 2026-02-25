@@ -41,10 +41,28 @@ func (a *ConfigAPI) GetVergeRaw() config.IVerge {
 	return a.mgr.GetVerge()
 }
 
+// onVergeChanged 由 app.go 注入：PatchVerge 后触发系统代理刷新等副作用
+var onVergeChanged func(verge config.IVerge)
+
+// SetOnVergeChanged 由 app.go 注入回调
+func SetOnVergeChanged(fn func(verge config.IVerge)) {
+	onVergeChanged = fn
+}
+
 // PatchVergeConfig 修改 IVerge 配置（patch 语义：只更新非nil字段）
 // 对应原: cmd::patch_verge_config
+// 保存后触发 onVergeChanged 回调（应用系统代理、重载核心等）
 func (a *ConfigAPI) PatchVergeConfig(patch config.IVerge) error {
-	return a.mgr.PatchVerge(patch)
+	if err := a.mgr.PatchVerge(patch); err != nil {
+		return err
+	}
+	// 触发副作用（系统代理、托盘更新等）
+	if onVergeChanged != nil {
+		onVergeChanged(a.mgr.GetVerge())
+	}
+	// 通知前端配置已更新
+	emitEvent("verge:updated", nil)
+	return nil
 }
 
 // GetClashInfo 获取 Clash 连接信息（端口、secret 等）

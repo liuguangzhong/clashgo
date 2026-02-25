@@ -155,6 +155,28 @@ func (a *App) Startup(ctx context.Context) {
 	// 10. 注入 core.Manager 到 API 层
 	api.SetCoreLifecycle(a.coreManager)
 
+	// 10.5 注入 Verge 变更回调：系统代理 + 托盘更新
+	api.SetOnVergeChanged(func(verge config.IVerge) {
+		sysEnabled := verge.EnableSystemProxy != nil && *verge.EnableSystemProxy
+		if sysEnabled {
+			if err := a.sysProxy.Apply(verge); err != nil {
+				log.Warn("Failed to apply system proxy", zap.Error(err))
+			} else {
+				log.Info("System proxy applied")
+			}
+		} else {
+			if err := a.sysProxy.Reset(); err != nil {
+				log.Warn("Failed to reset system proxy", zap.Error(err))
+			} else {
+				log.Info("System proxy reset")
+			}
+		}
+		// 更新托盘菜单
+		if a.trayMgr != nil {
+			a.trayMgr.UpdateMenu()
+		}
+	})
+
 	// 11. 托盘代理选项同步：监听前端请求
 	runtime.EventsOn(ctx, "tray:sync-proxy", func(_ ...interface{}) {
 		a.trayMgr.UpdateMenu()
