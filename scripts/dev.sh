@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ────────────────────────────────────────────────────────
 # ClashGo 一键启动脚本 (开发模式, macOS / Linux)
-# Usage: ./scripts/dev.sh
+# Usage: bash scripts/dev.sh
 # ────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -14,15 +14,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
-# 环境检查
-command -v go    >/dev/null 2>&1 || fail "Go 未安装"
-command -v node  >/dev/null 2>&1 || fail "Node.js 未安装"
+# 环境检查 — 全部检查，缺失则提示跑 setup
+command -v go    >/dev/null 2>&1 || fail "Go 未安装。请先运行: bash scripts/setup.sh"
+command -v node  >/dev/null 2>&1 || fail "Node.js 未安装。请先运行: bash scripts/setup.sh"
 command -v pnpm  >/dev/null 2>&1 || fail "pnpm 未安装。请先运行: bash scripts/setup.sh"
-command -v wails >/dev/null 2>&1 || {
-    info "安装 Wails CLI..."
-    go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
-    export PATH="$(go env GOPATH)/bin:$PATH"
-}
+command -v wails >/dev/null 2>&1 || fail "Wails CLI 未安装。请先运行: bash scripts/setup.sh"
 
 # 确保前端依赖
 if [ ! -d "frontend/node_modules" ]; then

@@ -17,19 +17,13 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = (Resolve-Path "$ScriptDir\..").Path
 Set-Location $ProjectDir
 
-# ── 1. 环境检查 ────────────────────────────────────────
+# ── 1. 环境检查 — 缺失则提示跑 setup ─────────────────
 Info "检查编译环境..."
 
-if (-not (Get-Command go -ErrorAction SilentlyContinue)) { Fail "Go 未安装。请访问 https://go.dev/dl/" }
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "Node.js 未安装。请访问 https://nodejs.org/" }
+if (-not (Get-Command go -ErrorAction SilentlyContinue)) { Fail "Go 未安装。请先运行: .\scripts\setup.ps1" }
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "Node.js 未安装。请先运行: .\scripts\setup.ps1" }
 if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) { Fail "pnpm 未安装。请先运行: .\scripts\setup.ps1" }
-
-if (-not (Get-Command wails -ErrorAction SilentlyContinue)) {
-    Warn "Wails CLI 未安装，正在安装..."
-    & go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
-    $env:PATH += ";$(go env GOPATH)\bin"
-    if (-not (Get-Command wails -ErrorAction SilentlyContinue)) { Fail "Wails CLI 安装失败" }
-}
+if (-not (Get-Command wails -ErrorAction SilentlyContinue)) { Fail "Wails CLI 未安装。请先运行: .\scripts\setup.ps1" }
 
 Ok "Go $(go version)"
 Ok "Node $(node -v)"
