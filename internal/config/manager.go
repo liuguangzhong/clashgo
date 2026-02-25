@@ -394,16 +394,16 @@ func LoadVergeRaw() (*IVerge, error) {
 // defaultClashBase 返回默认的 Clash 基础配置
 func defaultClashBase() IClashBase {
 	return IClashBase{
-		"mixed-port":          7897,
-		"socks-port":          7898,
-		"port":                7899,
-		"redir-port":          7895,
-		"tproxy-port":         7896,
+		"mixed-port":          17897,
+		"socks-port":          17898,
+		"port":                17899,
+		"redir-port":          17895,
+		"tproxy-port":         17896,
 		"log-level":           "info",
 		"allow-lan":           false,
 		"ipv6":                true,
 		"mode":                "rule",
-		"external-controller": "127.0.0.1:9097",
+		"external-controller": "127.0.0.1:19097",
 		"unified-delay":       true,
 		"secret":              "clashgo-secret",
 		"tun": map[string]interface{}{

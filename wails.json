@@ -12,7 +12,7 @@
     },
     "info": {
         "productName": "ClashGo",
-        "productVersion": "0.1.8",
+        "productVersion": "0.1.9",
         "productDescription": "A Mihomo GUI based on Go + Wails",
         "copyright": "GPL-3.0",
         "comments": ""
