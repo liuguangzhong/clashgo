@@ -140,12 +140,6 @@ func (a *ConfigAPI) UpdateUIStage(stage string) {
 	emitEvent("ui:stage", map[string]string{"stage": stage})
 }
 
-// GetRuntimeExists 获取运行时配置中已存在的 key 集合
-// 对应原: get_runtime_exists
-func (a *ConfigAPI) GetRuntimeExists() map[string]bool {
-	return a.mgr.GetRuntime().ExistsKeys
-}
-
 // GetRuntimeProxyChainConfig 获取指定出口节点的代理链运行时配置
 // 对应原: get_runtime_proxy_chain_config
 func (a *ConfigAPI) GetRuntimeProxyChainConfig(exitNode string) (string, error) {

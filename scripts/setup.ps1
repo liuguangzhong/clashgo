@@ -68,7 +68,7 @@ if (Get-Command wails -ErrorAction SilentlyContinue) {
 else {
     if ($HasGo) {
         Warn "Wails CLI 未安装，正在通过 go install 安装..."
-        & go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2 2>&1 | Out-Null
+        & go install github.com/wailsapp/wails/v2/cmd/wails@latest 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             $env:PATH += ";$(go env GOPATH)\bin"
             if (Get-Command wails -ErrorAction SilentlyContinue) {
