@@ -2,6 +2,9 @@ package api
 
 import (
 	"clashgo/internal/config"
+	"clashgo/internal/utils"
+
+	"go.uber.org/zap"
 )
 
 // ConfigAPI 配置相关 API（绑定到前端）
@@ -53,12 +56,21 @@ func SetOnVergeChanged(fn func(verge config.IVerge)) {
 // 对应原: cmd::patch_verge_config
 // 保存后触发 onVergeChanged 回调（应用系统代理、重载核心等）
 func (a *ConfigAPI) PatchVergeConfig(patch config.IVerge) error {
+	utils.Log().Info("[链路] PatchVergeConfig 调用",
+		zap.Bool("has_enable_sys_proxy", patch.EnableSystemProxy != nil))
+	if patch.EnableSystemProxy != nil {
+		utils.Log().Info("[链路] 系统代理开关", zap.Bool("enable", *patch.EnableSystemProxy))
+	}
 	if err := a.mgr.PatchVerge(patch); err != nil {
+		utils.Log().Error("[链路] PatchVerge 保存失败", zap.Error(err))
 		return err
 	}
 	// 触发副作用（系统代理、托盘更新等）
 	if onVergeChanged != nil {
+		utils.Log().Info("[链路] 触发 onVergeChanged 回调")
 		onVergeChanged(a.mgr.GetVerge())
+	} else {
+		utils.Log().Warn("[链路] onVergeChanged 回调未注入!")
 	}
 	// 通知前端配置已更新
 	emitEvent("verge:updated", nil)

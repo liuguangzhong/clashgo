@@ -126,15 +126,34 @@ func (a *ProfileAPI) DeleteProfile(uid string) error {
 
 // EnhanceProfiles 触发增强流水线（切换配置或修改 chain 后调用）
 func (a *ProfileAPI) EnhanceProfiles() error {
-	return coreManagerRef.UpdateConfig()
+	utils.Log().Info("[链路] EnhanceProfiles → UpdateConfig")
+	if coreManagerRef == nil {
+		utils.Log().Error("[链路] coreManagerRef is nil!")
+		return fmt.Errorf("core manager not initialized")
+	}
+	err := coreManagerRef.UpdateConfig()
+	if err != nil {
+		utils.Log().Error("[链路] UpdateConfig 失败", zap.Error(err))
+	} else {
+		utils.Log().Info("[链路] UpdateConfig 成功")
+	}
+	return err
 }
 
 // PatchProfilesConfig 将指定 profile 设为当前配置
 func (a *ProfileAPI) PatchProfilesConfig(uid string) error {
+	utils.Log().Info("[链路] PatchProfilesConfig 开始", zap.String("uid", uid))
 	if err := a.mgr.SetCurrentProfile(uid); err != nil {
+		utils.Log().Error("[链路] SetCurrentProfile 失败", zap.Error(err))
 		return err
 	}
-	return a.EnhanceProfiles()
+	utils.Log().Info("[链路] SetCurrentProfile 成功，开始 EnhanceProfiles")
+	if err := a.EnhanceProfiles(); err != nil {
+		utils.Log().Error("[链路] EnhanceProfiles 失败", zap.Error(err))
+		return err
+	}
+	utils.Log().Info("[链路] PatchProfilesConfig 完成")
+	return nil
 }
 
 // UpdateProfile 从网络更新远程订阅

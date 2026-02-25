@@ -179,16 +179,25 @@ func (m *Manager) UpdateConfig() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	utils.Log().Info("[链路] UpdateConfig: 生成运行时配置")
 	runtimePath, err := m.generateRuntimeConfig()
 	if err != nil {
+		utils.Log().Error("[链路] generateRuntimeConfig 失败", zap.Error(err))
 		return fmt.Errorf("generate config: %w", err)
+	}
+	utils.Log().Info("[链路] 运行时配置已生成", zap.String("path", runtimePath))
+
+	// 读取并打印配置文件大小
+	if info, e := os.Stat(runtimePath); e == nil {
+		utils.Log().Info("[链路] runtime.yaml", zap.Int64("bytes", info.Size()))
 	}
 
 	if m.mode.Load() != int32(ModeRunning) {
-		// 核心未运行时，直接启动
+		utils.Log().Info("[链路] 核心未运行，启动核心")
 		return m.startInProcess(runtimePath)
 	}
 
+	utils.Log().Info("[链路] 核心运行中，热加载配置")
 	return m.reloadConfigInProcess(runtimePath)
 }
 

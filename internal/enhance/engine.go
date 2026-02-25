@@ -65,9 +65,24 @@ func (e *Engine) Run() (*Result, error) {
 	// ─── 步骤1：读取当前订阅的原始 YAML ───────────────────────────────────────
 	baseConfig, profileName, err := e.loadCurrentProfile()
 	if err != nil {
-		log.Warn("No active profile, using empty config", zap.Error(err))
+		log.Warn("[链路] No active profile, using empty config", zap.Error(err))
 		baseConfig = make(map[string]interface{})
 		profileName = ""
+	} else {
+		// 统计代理节点数
+		proxyCount := 0
+		if proxies, ok := baseConfig["proxies"].([]interface{}); ok {
+			proxyCount = len(proxies)
+		}
+		groupCount := 0
+		if groups, ok := baseConfig["proxy-groups"].([]interface{}); ok {
+			groupCount = len(groups)
+		}
+		log.Info("[链路] 订阅配置已加载",
+			zap.String("profile", profileName),
+			zap.Int("keys", len(baseConfig)),
+			zap.Int("proxies", proxyCount),
+			zap.Int("proxy-groups", groupCount))
 	}
 
 	// 记录原始字段
