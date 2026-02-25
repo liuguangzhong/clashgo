@@ -5,6 +5,7 @@ import {
   getBaseConfig,
   getRuleProviders,
   getRules,
+  initMihomoClient,
 } from "tauri-plugin-mihomo-api";
 
 import { useVerge } from "@/hooks/use-verge";
@@ -12,6 +13,7 @@ import {
   calcuProxies,
   calcuProxyProviders,
   getAppUptime,
+  getClashInfo,
   getRunningMode,
   getSystemProxy,
 } from "@/services/cmds";
@@ -26,6 +28,26 @@ export const AppDataProvider = ({
   children: React.ReactNode;
 }) => {
   const { verge } = useVerge();
+
+  // ── 关键：初始化 Mihomo HTTP/WS 客户端地址 ──────────────────────────────
+  // 从后端获取 ClashInfo（含 external-controller 地址和 secret），
+  // 然后注入到 tauri-plugin-mihomo-api shim 中，使前端能访问 Mihomo REST/WS API
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const info = await getClashInfo();
+        if (info) {
+          const server = info.server || "127.0.0.1:9097";
+          const secret = info.secret || "";
+          console.log("[AppDataProvider] Initializing Mihomo client:", server);
+          initMihomoClient(server, secret);
+        }
+      } catch (error) {
+        console.warn("[AppDataProvider] Failed to get ClashInfo, using defaults:", error);
+      }
+    };
+    void init();
+  }, []);
 
   const { data: proxiesData, mutate: refreshProxy } = useSWR(
     "getProxies",
