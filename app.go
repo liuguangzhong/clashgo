@@ -44,8 +44,19 @@ type App struct {
 }
 
 // NewApp 构造 App
+// 注意: 此时必须创建 API 对象（即使是空壳），因为 Wails 在 Startup 之前
+// 就会调用 Bindings() 进行绑定生成，要求所有值都是有效的结构体指针。
+// 真正的依赖注入在 Startup() 中完成。
 func NewApp() *App {
-	return &App{}
+	return &App{
+		configAPI:      &api.ConfigAPI{},
+		proxyAPI:       &api.ProxyAPI{},
+		profileAPI:     &api.ProfileAPI{},
+		systemAPI:      &api.SystemAPI{},
+		backupAPI:      &api.BackupAPI{},
+		serviceAPI:     &api.ServiceAPI{},
+		mediaUnlockAPI: &api.MediaUnlockAPI{},
+	}
 }
 
 // Startup 由 Wails 在 WebView 就绪前调用，所有模块在此初始化
@@ -66,14 +77,14 @@ func (a *App) Startup(ctx context.Context) {
 		log.Fatal("Failed to initialize config manager", zap.Error(err))
 	}
 
-	// 3. API 层
-	a.configAPI = api.NewConfigAPI(cfgManager)
-	a.proxyAPI = api.NewProxyAPI(cfgManager)
-	a.profileAPI = api.NewProfileAPI(cfgManager)
-	a.systemAPI = api.NewSystemAPI()
-	a.backupAPI = api.NewBackupAPI(cfgManager)
-	a.serviceAPI = api.NewServiceAPI()
-	a.mediaUnlockAPI = api.NewMediaUnlockAPI()
+	// 3. API 层 — 通过 Init 注入依赖到已有对象（不替换指针，保持 Wails 绑定一致）
+	a.configAPI.Init(cfgManager)
+	a.proxyAPI.Init(cfgManager)
+	a.profileAPI.Init(cfgManager)
+	a.systemAPI.Init()
+	a.backupAPI.Init(cfgManager)
+	a.serviceAPI.Init()
+	// mediaUnlockAPI 无需 Init（无内部状态）
 
 	// 注入事件发送器（让 API 层可以向前端 emit 事件，无需持有 Wails ctx）
 	api.SetEventEmitter(func(event string, data interface{}) {
