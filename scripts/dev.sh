@@ -33,12 +33,16 @@ echo "  🔧 后端热更新: Wails Auto-rebuild"
 echo "  🌐 按 Ctrl+C 停止"
 echo ""
 
-# Linux 上检测 webkit2gtk 版本
+# Linux 上检测 webkit2gtk 版本，优先使用 4.1
 WAILS_TAGS=""
 if [ "$(uname -s)" = "Linux" ]; then
-    if ! pkg-config --exists webkit2gtk-4.0 2>/dev/null; then
-        info "webkit2gtk-4.0 不可用，使用 webkit2gtk-4.1 (-tags webkit2_41)"
+    if pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+        info "检测到 webkit2gtk-4.1，使用 -tags webkit2_41"
         WAILS_TAGS="-tags webkit2_41"
+    elif pkg-config --exists webkit2gtk-4.0 2>/dev/null; then
+        info "检测到 webkit2gtk-4.0，使用默认构建"
+    else
+        fail "未找到 webkit2gtk 开发库。请先运行: bash scripts/setup.sh"
     fi
 fi
 
