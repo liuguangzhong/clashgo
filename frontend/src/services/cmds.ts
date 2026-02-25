@@ -91,7 +91,12 @@ export async function createProfile(
   item: Partial<IProfileItem>,
   fileData?: string | null,
 ) {
-  return _ProfileAPI.CreateProfile?.(item, fileData ?? "");
+  // Go 端 CreateProfile 接收单个 CreateProfileRequest 结构体
+  return _ProfileAPI.CreateProfile?.({
+    type: item.type ?? "local",
+    name: item.name ?? "",
+    content: fileData ?? "",
+  });
 }
 
 export async function viewProfile(index: string) {
@@ -107,7 +112,8 @@ export async function saveProfileFile(index: string, fileData: string) {
 }
 
 export async function importProfile(url: string, option?: IProfileOption) {
-  return _ProfileAPI.ImportProfile?.(url, option ?? { with_proxy: true });
+  // Go 端 ImportProfile 接收单个 ImportProfileRequest 结构体
+  return _ProfileAPI.ImportProfile?.({ url, option: option ?? { with_proxy: true } });
 }
 
 export async function reorderProfile(activeId: string, overId: string) {
