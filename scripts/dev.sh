@@ -17,7 +17,7 @@ cd "$PROJECT_DIR"
 # 环境检查
 command -v go    >/dev/null 2>&1 || fail "Go 未安装"
 command -v node  >/dev/null 2>&1 || fail "Node.js 未安装"
-command -v pnpm  >/dev/null 2>&1 || fail "pnpm 未安装"
+command -v pnpm  >/dev/null 2>&1 || fail "pnpm 未安装。请先运行: bash scripts/setup.sh"
 command -v wails >/dev/null 2>&1 || {
     info "安装 Wails CLI..."
     go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2

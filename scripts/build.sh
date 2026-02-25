@@ -24,7 +24,7 @@ info "检查编译环境..."
 
 command -v go   >/dev/null 2>&1 || fail "Go 未安装。请访问 https://go.dev/dl/"
 command -v node >/dev/null 2>&1 || fail "Node.js 未安装。请访问 https://nodejs.org/"
-command -v pnpm >/dev/null 2>&1 || fail "pnpm 未安装。运行: npm install -g pnpm"
+command -v pnpm >/dev/null 2>&1 || fail "pnpm 未安装。请先运行: bash scripts/setup.sh"
 
 # 检查或安装 Wails CLI
 if ! command -v wails >/dev/null 2>&1; then

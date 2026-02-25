@@ -15,7 +15,7 @@ Set-Location $ProjectDir
 # 环境检查
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) { Fail "Go 未安装" }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "Node.js 未安装" }
-if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) { Fail "pnpm 未安装" }
+if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) { Fail "pnpm 未安装。请先运行: .\scripts\setup.ps1" }
 
 if (-not (Get-Command wails -ErrorAction SilentlyContinue)) {
     Info "安装 Wails CLI..."

@@ -22,7 +22,7 @@ Info "检查编译环境..."
 
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) { Fail "Go 未安装。请访问 https://go.dev/dl/" }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Fail "Node.js 未安装。请访问 https://nodejs.org/" }
-if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) { Fail "pnpm 未安装。运行: npm install -g pnpm" }
+if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) { Fail "pnpm 未安装。请先运行: .\scripts\setup.ps1" }
 
 if (-not (Get-Command wails -ErrorAction SilentlyContinue)) {
     Warn "Wails CLI 未安装，正在安装..."
