@@ -51,7 +51,7 @@ func (a *ProfileAPI) ImportProfile(req ImportProfileRequest) error {
 	filename := uid + ".yaml"
 
 	filePath := utils.Dirs().ProfileFile(filename)
-	if err := os.WriteFile(filePath, content, 0644); err != nil {
+	if err := config.WriteFileAtomic(filePath, content); err != nil {
 		return fmt.Errorf("write profile file: %w", err)
 	}
 
@@ -91,7 +91,7 @@ func (a *ProfileAPI) CreateProfile(req CreateProfileRequest) error {
 	if initContent == "" {
 		initContent = "# ClashGo Profile\n"
 	}
-	if err := os.WriteFile(filePath, []byte(initContent), 0644); err != nil {
+	if err := config.WriteFileAtomic(filePath, []byte(initContent)); err != nil {
 		return fmt.Errorf("write profile: %w", err)
 	}
 
@@ -191,7 +191,7 @@ func (a *ProfileAPI) UpdateProfile(uid string, option *config.ProfileOption) err
 	}
 
 	filePath := utils.Dirs().ProfileFile(*target.File)
-	if err := os.WriteFile(filePath, content, 0644); err != nil {
+	if err := config.WriteFileAtomic(filePath, content); err != nil {
 		return fmt.Errorf("write updated profile: %w", err)
 	}
 
@@ -220,7 +220,7 @@ func (a *ProfileAPI) SaveProfileFile(uid string, content string) error {
 	profiles := a.mgr.GetProfiles()
 	for _, p := range profiles.Items {
 		if p.UID != nil && *p.UID == uid && p.File != nil {
-			return os.WriteFile(utils.Dirs().ProfileFile(*p.File), []byte(content), 0644)
+			return config.WriteFileAtomic(utils.Dirs().ProfileFile(*p.File), []byte(content))
 		}
 	}
 	return fmt.Errorf("profile not found: %s", uid)

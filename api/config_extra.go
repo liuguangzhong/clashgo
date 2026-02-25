@@ -222,7 +222,7 @@ func (a *ConfigAPI) ReadTextFile(path string) (string, error) {
 
 // WriteTextFile 写入文本文件
 func (a *ConfigAPI) WriteTextFile(path, content string) error {
-	return os.WriteFile(path, []byte(content), 0644)
+	return config.WriteFileAtomic(path, []byte(content))
 }
 
 // FileExists 检查文件是否存在

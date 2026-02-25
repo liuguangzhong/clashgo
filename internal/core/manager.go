@@ -170,7 +170,13 @@ func (m *Manager) Stop() error {
 }
 
 // Restart 重启：重新生成配置并 Apply
+// 核心已运行时走热加载路径（UpdateConfig），未运行时走完整启动路径
 func (m *Manager) Restart() error {
+	if m.mode.Load() == int32(ModeRunning) {
+		// 已运行：重新生成配置并热加载（等效于完全重启但无需重建 tunnel/listener）
+		return m.UpdateConfig()
+	}
+	// 未运行：完整启动
 	return m.Start(context.Background())
 }
 
