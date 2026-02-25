@@ -104,6 +104,5 @@ func hiddenCmd(name string, args ...string) *exec.Cmd {
 
 // refreshInetSettings 通知所有应用系统代理设置已更改
 func refreshInetSettings() error {
-	return hiddenCmd("netsh", "winhttp", "import", "proxy", "source=ie").Start()
+	return hiddenCmd("netsh", "winhttp", "import", "proxy", "source=ie").Run()
 }
-

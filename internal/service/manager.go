@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"clashgo/internal/utils"
 
@@ -107,41 +108,47 @@ func (m *Manager) Stop() error {
 // ─── Windows 实现 ────────────────────────────────────────────────────────────
 
 func (m *Manager) installWindows() error {
-	svcPath, err := serviceExePath("install")
+	exePath, err := os.Executable()
 	if err != nil {
-		return err
+		return fmt.Errorf("get executable path: %w", err)
 	}
-	return runElevated(svcPath)
+
+	// 通过 PowerShell 提权执行 sc create 和 netsh wintun 驱动安装
+	// 使用 sc create 注册服务，binPath 指向当前 exe
+	script := fmt.Sprintf(
+		`$ErrorActionPreference = 'Stop'; `+
+			`sc.exe create %s binPath='"%s" --service' start=demand displayname='ClashGo TUN Service' | Out-Null; `+
+			`sc.exe description %s 'ClashGo TUN mode privilege service' | Out-Null; `+
+			`Write-Host 'Service installed'`,
+		serviceName, exePath, serviceName)
+
+	return runElevatedPS(script)
 }
 
 func (m *Manager) uninstallWindows() error {
-	svcPath, err := serviceExePath("uninstall")
-	if err != nil {
-		return err
-	}
-	return runElevated(svcPath)
+	script := fmt.Sprintf(
+		`$ErrorActionPreference = 'SilentlyContinue'; `+
+			`sc.exe stop %s | Out-Null; `+
+			`sc.exe delete %s | Out-Null; `+
+			`Write-Host 'Service removed'`,
+		serviceName, serviceName)
+
+	return runElevatedPS(script)
 }
 
-// serviceExePath 返回 install/uninstall 工具路径（Windows）
-func serviceExePath(action string) (string, error) {
-	exeDir, err := execDir()
-	if err != nil {
-		return "", fmt.Errorf("get exe dir: %w", err)
-	}
-	name := fmt.Sprintf("clashgo-service-%s.exe", action)
-	path := filepath.Join(exeDir, name)
-	if _, err := os.Stat(path); err != nil {
-		return "", fmt.Errorf("service tool not found: %s", path)
-	}
-	return path, nil
+// runElevatedPS 通过 PowerShell 以管理员权限执行脚本（隐藏窗口）
+func runElevatedPS(script string) error {
+	cmd := exec.Command("powershell", "-Command",
+		fmt.Sprintf("Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '-Command','%s'", script))
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd.Run()
 }
 
-// runElevated 在 Windows 上以管理员权限运行
+// runElevated 在 Windows 上以管理员权限运行（隐藏窗口）
 func runElevated(exePath string) error {
 	cmd := exec.Command("powershell", "-Command",
-		fmt.Sprintf("Start-Process -FilePath '%s' -Verb RunAs -Wait", exePath))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+		fmt.Sprintf("Start-Process -FilePath '%s' -Verb RunAs -Wait -WindowStyle Hidden", exePath))
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Run()
 }
 

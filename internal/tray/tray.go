@@ -17,10 +17,10 @@ import (
 
 // Manager 系统托盘管理器（对应原 src-tauri/src/core/tray/mod.rs）
 type Manager struct {
-	ctx    context.Context
-	core   *core.Manager
-	proxy  proxy.SysProxy
-	cfgMgr *config.Manager
+	ctx     context.Context
+	core    *core.Manager
+	proxy   proxy.SysProxy
+	cfgMgr  *config.Manager
 	appMenu *menu.Menu
 }
 
@@ -29,11 +29,11 @@ func NewManager(ctx context.Context, cm *core.Manager, sp proxy.SysProxy, cfg *c
 	return &Manager{ctx: ctx, core: cm, proxy: sp, cfgMgr: cfg}
 }
 
-// Start 初始化系统托盘及应用菜单
+// Start 初始化系统托盘
+// 注意: 不设置 MenuSetApplicationMenu, 否则会在窗口顶部显示菜单栏
 func (m *Manager) Start() {
 	m.appMenu = m.buildMenu()
-	runtime.MenuSetApplicationMenu(m.ctx, m.appMenu)
-	runtime.MenuUpdateApplicationMenu(m.ctx)
+	// 仅保留菜单数据供托盘右键使用，不设置到窗口
 	utils.Log().Info("System tray initialized")
 }
 
@@ -42,11 +42,9 @@ func (m *Manager) Stop() {
 	utils.Log().Info("System tray stopped")
 }
 
-// UpdateMenu 动态重建并刷新菜单（代理状态变化时调用）
+// UpdateMenu 动态重建菜单数据（代理状态变化时调用）
 func (m *Manager) UpdateMenu() {
 	m.appMenu = m.buildMenu()
-	runtime.MenuSetApplicationMenu(m.ctx, m.appMenu)
-	runtime.MenuUpdateApplicationMenu(m.ctx)
 }
 
 // buildMenu 根据当前状态构建完整菜单
