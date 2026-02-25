@@ -50,10 +50,12 @@ BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 LDFLAGS="-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -s -w"
 
 # Linux 上检测 webkit2gtk 版本，自动设置构建 tag
+# 逻辑：只要系统没有 webkit2gtk-4.0，就使用 webkit2_41 tag
+# (Ubuntu 22.04+ 只有 4.1，无 4.0)
 WAILS_TAGS=""
 if [ "$(uname -s)" = "Linux" ]; then
-    if pkg-config --exists webkit2gtk-4.1 2>/dev/null && ! pkg-config --exists webkit2gtk-4.0 2>/dev/null; then
-        info "检测到 webkit2gtk-4.1 (无 4.0)，添加 -tags webkit2_41"
+    if ! pkg-config --exists webkit2gtk-4.0 2>/dev/null; then
+        info "webkit2gtk-4.0 不可用，使用 webkit2gtk-4.1 (-tags webkit2_41)"
         WAILS_TAGS="-tags webkit2_41"
     fi
 fi
