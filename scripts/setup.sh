@@ -83,35 +83,105 @@ else
 fi
 
 # ── 5. 平台特有检查 ───────────────────────────────────
+
+# 辅助函数：检查 Linux 开发库是否安装
+# 优先 pkg-config，备用 dpkg/rpm，再备用 ldconfig
+check_linux_dev_lib() {
+    local pkg_name="$1"       # pkg-config 名称，如 webkit2gtk-4.1
+    local deb_dev="$2"        # Debian dev 包名，如 libwebkit2gtk-4.1-dev
+    local deb_runtime="$3"    # Debian 运行时包名，如 libwebkit2gtk-4.1-0
+    local rpm_dev="$4"        # RPM dev 包名
+    local arch_pkg="$5"       # Arch 包名
+    local so_pattern="$6"     # 共享库模式，如 libwebkit2gtk-4.1
+
+    # 方式1: pkg-config (最准确，检测 -dev 包)
+    if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists "$pkg_name" 2>/dev/null; then
+        ok "$pkg_name (dev)"
+        return 0
+    fi
+
+    # 方式2: dpkg 检测 (Debian/Ubuntu)
+    if command -v dpkg >/dev/null 2>&1; then
+        if dpkg -s "$deb_dev" >/dev/null 2>&1; then
+            ok "$pkg_name (dev) [dpkg]"
+            return 0
+        elif dpkg -s "$deb_runtime" >/dev/null 2>&1; then
+            # 运行时包已装，但缺少开发包
+            warn "$pkg_name: 运行时包 $deb_runtime 已安装，但编译需要开发包"
+            echo "    sudo apt install $deb_dev"
+            ERRORS=$((ERRORS+1))
+            return 1
+        fi
+    fi
+
+    # 方式3: rpm 检测 (Fedora/RHEL)
+    if command -v rpm >/dev/null 2>&1; then
+        if rpm -q "$rpm_dev" >/dev/null 2>&1; then
+            ok "$pkg_name (dev) [rpm]"
+            return 0
+        fi
+    fi
+
+    # 方式4: ldconfig 检测共享库是否存在 (最后手段)
+    if ldconfig -p 2>/dev/null | grep -q "$so_pattern"; then
+        warn "$pkg_name: 共享库存在，但未检测到开发包 (头文件/.pc文件)"
+        echo "    Ubuntu/Debian: sudo apt install $deb_dev"
+        echo "    Fedora:        sudo dnf install $rpm_dev"
+        echo "    Arch:          sudo pacman -S $arch_pkg"
+        ERRORS=$((ERRORS+1))
+        return 1
+    fi
+
+    # 完全没有
+    fail "$pkg_name 未安装"
+    echo "    Ubuntu/Debian: sudo apt install $deb_dev"
+    echo "    Fedora:        sudo dnf install $rpm_dev"
+    echo "    Arch:          sudo pacman -S $arch_pkg"
+    ERRORS=$((ERRORS+1))
+    return 1
+}
+
 OS="$(uname -s)"
 case "$OS" in
     Linux)
         info "检查 Linux 开发库..."
-        if command -v pkg-config >/dev/null 2>&1; then
-            if pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
-                ok "webkit2gtk-4.1"
-            else
-                fail "webkit2gtk-4.1 未安装"
-                echo "    Ubuntu/Debian: sudo apt install libwebkit2gtk-4.1-dev"
-                echo "    Fedora:        sudo dnf install webkit2gtk4.1-devel"
-                echo "    Arch:          sudo pacman -S webkit2gtk-4.1"
-                ERRORS=$((ERRORS+1))
-            fi
-            if pkg-config --exists gtk+-3.0 2>/dev/null; then
-                ok "GTK 3"
-            else
-                fail "GTK 3 开发库未安装"
-                echo "    Ubuntu/Debian: sudo apt install libgtk-3-dev"
-                echo "    Fedora:        sudo dnf install gtk3-devel"
-                echo "    Arch:          sudo pacman -S gtk3"
-                ERRORS=$((ERRORS+1))
-            fi
-        else
-            fail "pkg-config 未安装"
+
+        # pkg-config 自身
+        if ! command -v pkg-config >/dev/null 2>&1; then
+            warn "pkg-config 未安装 (部分检测可能不准确)"
             echo "    Ubuntu/Debian: sudo apt install pkg-config"
             echo "    Fedora:        sudo dnf install pkgconfig"
             echo "    Arch:          sudo pacman -S pkgconf"
-            ERRORS=$((ERRORS+1))
+        fi
+
+        # webkit2gtk
+        check_linux_dev_lib \
+            "webkit2gtk-4.1" \
+            "libwebkit2gtk-4.1-dev" \
+            "libwebkit2gtk-4.1-0" \
+            "webkit2gtk4.1-devel" \
+            "webkit2gtk-4.1" \
+            "libwebkit2gtk-4.1"
+
+        # GTK 3
+        check_linux_dev_lib \
+            "gtk+-3.0" \
+            "libgtk-3-dev" \
+            "libgtk-3-0" \
+            "gtk3-devel" \
+            "gtk3" \
+            "libgtk-3"
+
+        # libayatana-appindicator (可选但推荐，系统托盘需要)
+        if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists ayatana-appindicator3-0.1 2>/dev/null; then
+            ok "libayatana-appindicator3"
+        elif command -v dpkg >/dev/null 2>&1 && dpkg -s libayatana-appindicator3-dev >/dev/null 2>&1; then
+            ok "libayatana-appindicator3 [dpkg]"
+        else
+            warn "libayatana-appindicator3 未安装 (系统托盘需要，可选)"
+            echo "    Ubuntu/Debian: sudo apt install libayatana-appindicator3-dev"
+            echo "    Fedora:        sudo dnf install libayatana-appindicator-gtk3-devel"
+            echo "    Arch:          sudo pacman -S libayatana-appindicator"
         fi
         ;;
     Darwin)
