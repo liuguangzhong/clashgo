@@ -62,3 +62,27 @@ Ok "  ClashGo 构建成功!"
 Ok "  产物目录: build\bin\"
 Ok "═══════════════════════════════════════"
 Get-ChildItem "build\bin" -ErrorAction SilentlyContinue | Format-Table Name, @{N = 'Size(MB)'; E = { [math]::Round($_.Length / 1MB, 2) } } -AutoSize
+
+# ── 5. 安装到系统路径 ────────────────────────────────
+$Binary = Get-ChildItem "build\bin\*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($Binary) {
+    $InstallDir = "$env:LOCALAPPDATA\ClashGo"
+    if (-not (Test-Path $InstallDir)) {
+        New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    }
+
+    Info "安装到 $InstallDir ..."
+    Copy-Item $Binary.FullName "$InstallDir\clashgo.exe" -Force
+
+    # 加入用户 PATH（如果还没有）
+    $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($UserPath -notlike "*$InstallDir*") {
+        [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", "User")
+        Ok "已添加到用户 PATH"
+    }
+
+    Ok "已安装: $InstallDir\clashgo.exe"
+    Write-Host ""
+    Ok "重新打开终端后可在任意位置运行: clashgo"
+}
+
