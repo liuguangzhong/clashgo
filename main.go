@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -21,6 +22,12 @@ import (
 var assets embed.FS
 
 func main() {
+	// 确保所有数据目录存在（首次运行时创建）
+	if err := utils.EnsureDirectories(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create data directories: %v\n", err)
+		os.Exit(1)
+	}
+
 	// 检查单例（防止多开）
 	unlock, err := utils.AcquireSingleton()
 	if err != nil {
