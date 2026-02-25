@@ -229,14 +229,49 @@ func (p *linuxProxy) setGNOMEProp(path, iface, prop string, val interface{}) err
 			zap.String("prop", prop),
 			zap.Error(call.Err))
 	}
-	// fallback: gsettings CLI
-	schema := iface[len("org.gnome."):]
-	return p.setGSetting(schema, prop, fmt.Sprintf("%v", val))
+	// fallback: gsettings CLI（schema 即 iface 全名，如 org.gnome.system.proxy.http）
+	var valStr string
+	switch v := val.(type) {
+	case []string:
+		// gsettings 数组格式: "['item1', 'item2']"
+		items := make([]string, len(v))
+		for i, s := range v {
+			items[i] = "'" + s + "'"
+		}
+		valStr = "[" + joinStrings(items, ", ") + "]"
+	case int32:
+		valStr = fmt.Sprintf("%d", v)
+	default:
+		valStr = fmt.Sprintf("'%v'", v)
+	}
+	return p.setGSetting(iface, prop, valStr)
 }
 
-// setGSetting 通过 gsettings CLI 设置（D-Bus fallback）
+// joinStrings 简单的字符串连接
+func joinStrings(items []string, sep string) string {
+	result := ""
+	for i, s := range items {
+		if i > 0 {
+			result += sep
+		}
+		result += s
+	}
+	return result
+}
+
+// setGSetting 通过 gsettings CLI 设置
 func (p *linuxProxy) setGSetting(schema, key, value string) error {
-	return exec.Command("gsettings", "set", schema, key, value).Run()
+	cmd := exec.Command("gsettings", "set", schema, key, value)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		utils.Log().Warn("gsettings set failed",
+			zap.String("schema", schema),
+			zap.String("key", key),
+			zap.String("value", value),
+			zap.String("output", string(out)),
+			zap.Error(err))
+	}
+	return err
 }
 
 // ─── KDE 实现 ─────────────────────────────────────────────────────────────────
