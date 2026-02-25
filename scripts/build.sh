@@ -6,50 +6,18 @@
 #   默认构建当前平台
 # ────────────────────────────────────────────────────────
 set -euo pipefail
+source "$(cd "$(dirname "$0")" && pwd)/common.sh"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
-fail()  { echo -e "${RED}[FAIL]${NC}  $*"; exit 1; }
-
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PLATFORM="${1:-}"
 
-cd "$PROJECT_DIR"
-
-# ── 1. 环境检查 — 缺失则提示跑 setup ─────────────────
+# ── 1. 环境检查 ───────────────────────────────────────
 info "检查编译环境..."
-
-command -v go    >/dev/null 2>&1 || fail "Go 未安装。请先运行: bash scripts/setup.sh"
-command -v node  >/dev/null 2>&1 || fail "Node.js 未安装。请先运行: bash scripts/setup.sh"
-command -v pnpm  >/dev/null 2>&1 || fail "pnpm 未安装。请先运行: bash scripts/setup.sh"
-command -v wails >/dev/null 2>&1 || fail "Wails CLI 未安装。请先运行: bash scripts/setup.sh"
-
-# Linux 上检查开发库是否就绪
-if [ "$(uname -s)" = "Linux" ] && command -v pkg-config >/dev/null 2>&1; then
-    if ! pkg-config --exists webkit2gtk-4.1 2>/dev/null && ! pkg-config --exists webkit2gtk-4.0 2>/dev/null; then
-        fail "webkit2gtk 开发库未安装。请先运行: bash scripts/setup.sh"
-    fi
-    if ! pkg-config --exists gtk+-3.0 2>/dev/null; then
-        fail "GTK 3 开发库未安装。请先运行: bash scripts/setup.sh"
-    fi
-fi
-
-ok "Go $(go version | awk '{print $3}')"
-ok "Node $(node -v)"
-ok "pnpm $(pnpm -v)"
-ok "Wails $(wails version 2>/dev/null | head -1 || echo 'installed')"
+check_env
 
 # ── 2. 安装前端依赖 ───────────────────────────────────
-info "安装前端依赖..."
-cd frontend
-pnpm install --frozen-lockfile 2>/dev/null || pnpm install
-cd "$PROJECT_DIR"
-ok "前端依赖安装完成"
+install_frontend
 
-# ── 3. Go 依赖 ─────────────────────────────────────────
+# ── 3. Go 依赖 ────────────────────────────────────────
 info "下载 Go 依赖..."
 go mod download
 ok "Go 依赖下载完成"
@@ -59,18 +27,7 @@ VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo 'v1.0.0-dev'
 BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 LDFLAGS="-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -s -w"
 
-# Linux 上检测 webkit2gtk 版本，优先使用 4.1（我们安装的是 4.1-dev）
-WAILS_TAGS=""
-if [ "$(uname -s)" = "Linux" ]; then
-    if pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
-        info "检测到 webkit2gtk-4.1，使用 -tags webkit2_41"
-        WAILS_TAGS="-tags webkit2_41"
-    elif pkg-config --exists webkit2gtk-4.0 2>/dev/null; then
-        info "检测到 webkit2gtk-4.0，使用默认构建"
-    else
-        fail "未找到 webkit2gtk 开发库。请先运行: bash scripts/setup.sh"
-    fi
-fi
+detect_webkit_tags
 
 if [ -n "$PLATFORM" ]; then
     info "构建目标平台: $PLATFORM"
