@@ -124,6 +124,18 @@ func (e *Engine) Run() (*Result, error) {
 		ExternalCtrlEnabled: externalCtrlEnabled,
 	})
 
+	// ─── 步骤7.5：注入 GeoIP/GeoSite 国内 CDN 下载地址 ────────────────────────
+	// 默认从 GitHub 下载，国内无法访问。使用 jsdelivr CDN 作为 fallback。
+	// 仅在用户未自行配置 geodata-url / geox-url 时注入。
+	if _, hasGeox := baseConfig["geox-url"]; !hasGeox {
+		baseConfig["geox-url"] = map[string]interface{}{
+			"geoip":   "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.metadb",
+			"geosite": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat",
+			"mmdb":    "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/country.mmdb",
+			"asn":     "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/GeoLite2-ASN.mmdb",
+		}
+	}
+
 	// ─── 步骤8：内置脚本 ──────────────────────────────────────────────────────
 	if e.verge.EnableBuiltinEnhanced == nil || *e.verge.EnableBuiltinEnhanced {
 		coreName := e.verge.GetClashCore()
