@@ -138,10 +138,11 @@ func (a *ConfigAPI) PatchClashMode(mode string) error {
 	return nil
 }
 
-// GetRuntimeConfig 获取运行时生成的完整配置快照
+// GetRuntimeConfig 获取运行时配置（直接返回 config map）
+// 前端通过 clash.tun / clash["mixed-port"] 等直接访问字段
 // 对应原: cmd::get_runtime_config
-func (a *ConfigAPI) GetRuntimeConfig() config.RuntimeSnapshot {
-	return a.mgr.GetRuntime()
+func (a *ConfigAPI) GetRuntimeConfig() config.IClashBase {
+	return a.mgr.GetRuntime().Config
 }
 
 // GetRuntimeYAML 获取运行时 YAML 文本内容
