@@ -155,9 +155,9 @@ func parseMod(s string) (hotkey.Modifier, error) {
 	case "shift":
 		return hotkey.ModShift, nil
 	case "alt", "option":
-		return hotkey.ModAlt, nil
+		return modAlt, nil
 	case "super", "win", "cmd", "command":
-		return hotkey.ModWin, nil
+		return modWin, nil
 	}
 	return 0, fmt.Errorf("unknown modifier: %s", s)
 }
