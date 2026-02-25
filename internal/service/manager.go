@@ -29,15 +29,12 @@ func New() *Manager {
 	return &Manager{}
 }
 
-// IsAvailable 检查系统服务是否已安装并可用
+// IsAvailable 检查 TUN 模式是否可用
 func (m *Manager) IsAvailable() bool {
 	switch runtime.GOOS {
 	case "windows":
-		out, err := exec.Command("sc", "query", serviceName).Output()
-		if err != nil {
-			return false
-		}
-		return len(out) > 0
+		// Windows TUN 需要管理员权限运行
+		return m.windowsIsAdmin()
 	case "linux":
 		// Linux: 检查二进制是否有 cap_net_admin 能力
 		return m.linuxHasCapability()
@@ -107,33 +104,41 @@ func (m *Manager) Stop() error {
 
 // ─── Windows 实现 ────────────────────────────────────────────────────────────
 
+// windowsIsAdmin 检查当前进程是否以管理员身份运行
+func (m *Manager) windowsIsAdmin() bool {
+	cmd := exec.Command("net", "session")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	err := cmd.Run()
+	return err == nil
+}
+
+// installWindows Windows 上以管理员身份重启当前程序以获取 TUN 权限
 func (m *Manager) installWindows() error {
+	if m.windowsIsAdmin() {
+		return nil // 已经是管理员
+	}
+
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("get executable path: %w", err)
 	}
 
-	// 通过 PowerShell 提权执行 sc create 和 netsh wintun 驱动安装
-	// 使用 sc create 注册服务，binPath 指向当前 exe
-	script := fmt.Sprintf(
-		`$ErrorActionPreference = 'Stop'; `+
-			`sc.exe create %s binPath='"%s" --service' start=demand displayname='ClashGo TUN Service' | Out-Null; `+
-			`sc.exe description %s 'ClashGo TUN mode privilege service' | Out-Null; `+
-			`Write-Host 'Service installed'`,
-		serviceName, exePath, serviceName)
+	// 通过 ShellExecute 以管理员身份重启自身
+	cmd := exec.Command("powershell", "-Command",
+		fmt.Sprintf("Start-Process -FilePath '%s' -Verb RunAs", exePath))
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to restart as admin: %w", err)
+	}
 
-	return runElevatedPS(script)
+	// 新进程已启动，当前进程应该退出
+	os.Exit(0)
+	return nil
 }
 
 func (m *Manager) uninstallWindows() error {
-	script := fmt.Sprintf(
-		`$ErrorActionPreference = 'SilentlyContinue'; `+
-			`sc.exe stop %s | Out-Null; `+
-			`sc.exe delete %s | Out-Null; `+
-			`Write-Host 'Service removed'`,
-		serviceName, serviceName)
-
-	return runElevatedPS(script)
+	// Windows 不需要卸载，只需普通用户重启即可
+	return nil
 }
 
 // runElevatedPS 通过 PowerShell 以管理员权限执行脚本（隐藏窗口）
@@ -288,21 +293,9 @@ func (m *Manager) QueryStatus() ServiceStatus {
 }
 
 func (m *Manager) queryWindows() ServiceStatus {
-	out, err := exec.Command("sc", "query", serviceName).Output()
-	if err != nil {
-		return ServiceStatus{Available: false, Error: err.Error()}
+	isAdmin := m.windowsIsAdmin()
+	return ServiceStatus{
+		Available: isAdmin,
+		Running:   isAdmin,
 	}
-
-	outStr := string(out)
-	available := len(outStr) > 0
-
-	running := false
-	for i := 0; i < len(outStr)-7; i++ {
-		if outStr[i:i+7] == "RUNNING" {
-			running = true
-			break
-		}
-	}
-
-	return ServiceStatus{Available: available, Running: running}
 }

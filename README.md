@@ -150,8 +150,11 @@ npm config set registry https://registry.npmmirror.com
 | **WebView2 Runtime** | Windows 10/11 通常已内置，缺失需手动装 | [https://developer.microsoft.com/microsoft-edge/webview2/](https://developer.microsoft.com/microsoft-edge/webview2/) |
 | **GCC** (CGo 编译需要) | 推荐 TDM-GCC（安装简单） | [https://jmeubank.github.io/tdm-gcc/](https://jmeubank.github.io/tdm-gcc/) |
 | | 或 MSYS2（功能更全） | [https://www.msys2.org/](https://www.msys2.org/) → `pacman -S mingw-w64-x86_64-gcc` |
+| **wintun.dll** (TUN 模式必需) | Windows TUN 虚拟网卡驱动 | [https://www.wintun.net/](https://www.wintun.net/) → 下载 zip → 解压 `wintun/bin/amd64/wintun.dll` 放到 `clashgo.exe` 同目录 |
 
 > ⚠️ 安装 GCC 后需要**重启终端**确保 `gcc` 在 PATH 中。
+>
+> ⚠️ **TUN 模式**需要 `wintun.dll` 和**管理员权限**运行，否则无法创建虚拟网卡。
 
 </details>
 
@@ -373,34 +376,97 @@ https://example.com/api/v1/client/subscribe?token=xxxxx
 
 ### 配置系统代理
 
-1. 在主界面左侧点击 **「设置」** (Settings)
-2. 找到 **「系统代理」** 开关，打开即可自动设置系统代理
-3. 系统代理会指向 Mihomo 的 mixed-port（默认 7897）
+<!-- 截图: 首页 → 网络设置区域，系统代理开关 -->
+<!-- ![系统代理](docs/screenshots/system-proxy.png) -->
+
+1. 在首页找到 **「网络设置」** 区域
+2. 点击 **「系统代理」** 按钮使其亮起（绿色圆点表示已启用）
+3. 系统代理会指向 Mihomo 的 mixed-port（默认 **17897**）
+
+> 💡 如果你的系统同时运行了 Clash Verge Rev（端口 7897），ClashGo 使用不同的端口（17897），不会冲突。
 
 ### 切换代理模式
 
-在主界面顶部或系统托盘右键菜单中可切换三种模式：
+<!-- 截图: 首页 → 代理模式区域 -->
+<!-- ![代理模式](docs/screenshots/proxy-mode.png) -->
+
+在首页右侧 **「代理模式」** 卡片中可切换三种模式：
 
 | 模式 | 说明 |
 |------|------|
-| **Rule** (规则) | 按规则分流 — 国内直连，国外走代理（推荐日常使用） |
-| **Global** (全局) | 所有流量走代理 |
-| **Direct** (直连) | 所有流量直连，代理暂停 |
+| **规则** | 按规则分流 — 国内直连，国外走代理（**推荐日常使用**） |
+| **全局** | 所有流量走代理 |
+| **直连** | 所有流量直连，代理暂停 |
 
 ### 选择代理节点
 
-1. 点击左侧 **「代理」** (Proxies) 标签
+1. 点击左侧 **「代理」** 标签
 2. 展开代理组（如 PROXY / 自动选择 / 手动选择）
 3. 点击想要的节点即可切换
 4. 节点右侧的延迟数字可以点击测速
 
 ### 启用 TUN 模式（全局透明代理）
 
-1. 进入 **「设置」** → 打开 **「TUN 模式」**
-2. 首次开启需要管理员权限（Windows 弹 UAC，Linux 弹 polkit）
-3. TUN 模式会接管系统所有网络流量，无需配置系统代理
+<!-- 截图: 首页 → 虚拟网卡模式设置弹窗 -->
+<!-- ![TUN 设置](docs/screenshots/tun-settings.png) -->
 
-> ⚠️ TUN 模式需要管理员/root 权限。
+TUN 模式通过虚拟网卡接管**系统所有网络流量**（包括不走系统代理的应用），是最强的代理方式。
+
+#### 🪟 Windows TUN 配置
+
+1. **准备 wintun.dll**：下载 [Wintun](https://www.wintun.net/) → 解压 `wintun/bin/amd64/wintun.dll` → 放到 `clashgo.exe` **同目录**
+2. **以管理员身份运行** ClashGo（右键 → 以管理员身份运行）
+3. 在首页点击 **「虚拟网卡模式」** 标签
+4. 点击 ⚙️ 齿轮图标打开 TUN 设置
+5. 确认配置：
+   - **TUN 模式堆栈**：选择 `System`（推荐）或 `GVisor`
+   - **虚拟网卡名称**：`Mihomo`
+   - **自动设置全局路由**：开启 ✅
+   - **严格路由**：开启 ✅（推荐）
+   - **DNS 劫持**：`any:53`
+6. 点击 **「保存」**
+7. 打开虚拟网卡模式的 **开关**
+
+> ⚠️ Windows TUN 必须满足：**wintun.dll 在同目录** + **管理员权限运行**
+
+#### 🐧 Linux TUN 配置
+
+1. **设置网络权限**（只需一次）：
+   ```bash
+   # 方式一：UI 中点击「安装服务」按钮，会弹出 polkit 提权
+   # 方式二：手动设置
+   sudo setcap cap_net_admin,cap_net_raw,cap_net_bind_service=+ep /path/to/clashgo
+   ```
+2. 在首页点击 **「虚拟网卡模式」** 标签
+3. 配置同 Windows（TUN 堆栈推荐 `System`）
+4. 打开虚拟网卡模式开关
+
+> 💡 Linux 设置 `setcap` 后，后续无需 sudo 即可开启 TUN。
+
+#### TUN 参数说明
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| TUN 模式堆栈 | `System` | 网络栈实现。`System` 使用 OS 原生栈（兼容性最好），`GVisor` 使用用户态栈，`Mixed` 混合模式 |
+| 虚拟网卡名称 | `Mihomo` | TUN 网卡的名称 |
+| 自动设置全局路由 | ✅ | 自动配置路由表，将所有流量导向 TUN |
+| 严格路由 | ✅ | 防止流量绕过 TUN。开启后更安全，但可能影响某些特殊应用 |
+| 自动选择流量出口接口 | ✅ | 自动检测出口网卡 |
+| DNS 劫持 | `any:53` | 劫持 DNS 请求到 Mihomo 的内置 DNS |
+| 最大传输单元 | `1500` | MTU 值，一般不需要修改 |
+
+### 默认端口配置
+
+ClashGo 使用独立的端口避免与 Clash Verge 等其他代理软件冲突：
+
+| 用途 | 端口 |
+|------|------|
+| Mixed 代理 (HTTP+SOCKS) | **17897** |
+| SOCKS5 代理 | **17898** |
+| HTTP 代理 | **17899** |
+| 外部控制器 (API) | **19097** |
+
+> 💡 这些端口可在 **设置 → Clash 设置** 中自定义修改。
 
 ### 配置增强（Merge / Script）
 
@@ -410,8 +476,8 @@ https://example.com/api/v1/client/subscribe?token=xxxxx
 
 ### 查看连接与日志
 
-- **「连接」** (Connections) 页面：查看实时活跃连接、流量统计，可断开指定连接
-- **「日志」** (Logs) 页面：查看 Mihomo 代理内核的实时日志
+- **「连接」** 页面：查看实时活跃连接、流量统计，可断开指定连接
+- **「日志」** 页面：查看 Mihomo 代理内核的实时日志
 
 ### 数据目录
 
@@ -427,6 +493,8 @@ https://example.com/api/v1/client/subscribe?token=xxxxx
 - `profiles.yaml` — 订阅列表
 - `profiles/` 目录 — 订阅的 YAML 配置文件
 - `runtime.yaml` — 增强流水线生成的实际运行配置
+
+> ⚠️ 如果遇到端口冲突或配置异常，可以删除 `clash.yaml` 让 ClashGo 重新生成默认配置。
 
 ---
 
