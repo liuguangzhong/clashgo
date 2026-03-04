@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,6 +45,7 @@ func (a *ProfileAPI) ImportProfile(req ImportProfileRequest) error {
 
 	content, extra, err := downloadProfile(req.URL, req.Option)
 	if err != nil {
+		log.Error("Failed to download profile", zap.String("url", maskURL(req.URL)), zap.Error(err))
 		return fmt.Errorf("download profile: %w", err)
 	}
 
@@ -306,7 +308,8 @@ type CreateProfileRequest struct {
 
 // ─── 内部辅助 ─────────────────────────────────────────────────────────────────
 
-// downloadProfile 下载订阅内容并解析元数据
+// downloadProfile 下载订阅内容并解析元数据。
+// 自动支持标准 Clash YAML 和 Base64 编码内容两种格式。
 func downloadProfile(rawURL string, opt *config.ProfileOption) ([]byte, *config.ProfileExtra, error) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
@@ -315,7 +318,8 @@ func downloadProfile(rawURL string, opt *config.ProfileOption) ([]byte, *config.
 		return nil, nil, err
 	}
 
-	ua := "ClashVerge/1.0 (clashgo)"
+	// 使用主流客户端 UA，几乎所有机场都认可
+	ua := "clash-verge/1.7.7"
 	if opt != nil && opt.UserAgent != nil {
 		ua = *opt.UserAgent
 	}
@@ -328,7 +332,7 @@ func downloadProfile(rawURL string, opt *config.ProfileOption) ([]byte, *config.
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("server returned %d", resp.StatusCode)
+		return nil, nil, fmt.Errorf("服务器返回 %d，请检查订阅链接是否有效", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -336,16 +340,55 @@ func downloadProfile(rawURL string, opt *config.ProfileOption) ([]byte, *config.
 		return nil, nil, fmt.Errorf("read body: %w", err)
 	}
 
-	// 验证 YAML 合法性
-	var check map[string]interface{}
-	if err := yaml.Unmarshal(body, &check); err != nil {
-		return nil, nil, fmt.Errorf("not valid YAML: %w", err)
+	// 支持 YAML 和 Base64 编码的 YAML订阅内容
+	content, parseErr := validateAndNormalizeProfile(body)
+	if parseErr != nil {
+		return nil, nil, parseErr
 	}
 
 	// 解析 subscription-userinfo 响应头
 	extra := parseSubscriptionInfo(resp.Header.Get("subscription-userinfo"))
 
-	return body, extra, nil
+	return content, extra, nil
+}
+
+// validateAndNormalizeProfile 验证并归一化订阅内容为 Clash YAML。
+// 支持原始 YAML 和 Base64 编码的 YAML（常见于国内机场）。
+func validateAndNormalizeProfile(body []byte) ([]byte, error) {
+	// 先直接尝试 YAML
+	var check map[string]interface{}
+	if err := yaml.Unmarshal(body, &check); err == nil && isClashConfig(check) {
+		return body, nil
+	}
+
+	// 尝试多种 Base64 解码
+	trimmed := strings.TrimSpace(string(body))
+	for _, dec := range []func(string) ([]byte, error){
+		base64.StdEncoding.DecodeString,
+		base64.URLEncoding.DecodeString,
+		base64.RawStdEncoding.DecodeString,
+		base64.RawURLEncoding.DecodeString,
+	} {
+		if decoded, err := dec(trimmed); err == nil && len(decoded) > 0 {
+			var check2 map[string]interface{}
+			if err2 := yaml.Unmarshal(decoded, &check2); err2 == nil && isClashConfig(check2) {
+				return decoded, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("订阅内容不是有效的 Clash 配置（YAML 或 Base64 编码的 YAML）。" +
+		"请确认链接是 Clash/Mihomo 订阅格式")
+}
+
+// isClashConfig 检查 YAML map 是否包含 Clash 关键字段
+func isClashConfig(m map[string]interface{}) bool {
+	for _, k := range []string{"proxies", "proxy-providers", "rules", "rule-providers", "mixed-port", "port"} {
+		if _, ok := m[k]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // parseSubscriptionInfo 解析 subscription-userinfo 响应头
