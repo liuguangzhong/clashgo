@@ -18,7 +18,9 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net"
+	"sync"
 )
 
 // ── Hysteria2 ─────────────────────────────────────────────────────────────────
@@ -38,6 +40,10 @@ type Hysteria2Outbound struct {
 
 	// TCP 降级配置
 	fallbackTCP bool
+
+	// QUIC 连接池
+	mu       sync.Mutex
+	quicConn *hy2QUICConn
 }
 
 // hysteria2DialFn QUIC 拨号函数类型（允许依赖注入）
@@ -70,26 +76,62 @@ func NewHysteria2Outbound(name, server, password, sni string, skipCert bool, obf
 func (h *Hysteria2Outbound) Name() string { return h.name }
 
 func (h *Hysteria2Outbound) DialTCP(ctx context.Context, metadata *Metadata) (net.Conn, error) {
-	// 优先使用注入的 QUIC 拨号器
+	// 先尝试复用已有 QUIC 连接
+	h.mu.Lock()
+	conn := h.quicConn
+	h.mu.Unlock()
+
+	if conn != nil {
+		// 尝试在已有连接上打开 stream
+		streamConn, err := conn.DialStream(ctx, metadata)
+		if err == nil {
+			return streamConn, nil
+		}
+		// 连接可能已断开，重建
+		log.Printf("[Hysteria2] 复用连接失败，重建: %v", err)
+	}
+
+	// 建立新的 QUIC 连接
+	newConn, err := h.dialQuic(ctx)
+	if err != nil {
+		// QUIC 失败时尝试 TCP 降级
+		if h.fallbackTCP {
+			log.Printf("[Hysteria2] QUIC 失败，尝试 TCP 降级: %v", err)
+			return h.dialTCPFallback(ctx, metadata)
+		}
+		return nil, fmt.Errorf("hysteria2 QUIC: %w", err)
+	}
+
+	h.mu.Lock()
+	h.quicConn = newConn
+	h.mu.Unlock()
+
+	return newConn.DialStream(ctx, metadata)
+}
+
+// dialQuic 建立 QUIC 连接并认证
+func (h *Hysteria2Outbound) dialQuic(ctx context.Context) (*hy2QUICConn, error) {
 	dialFn := h.dialFn
 	if dialFn == nil {
 		dialFn = globalHysteria2DialFn
 	}
-
-	if dialFn != nil {
-		conn, err := dialFn(ctx, h.server, h.password, h.sni, h.skipCert)
-		if err == nil {
-			return conn, nil
-		}
-		// QUIC 失败时降级
-		if !h.fallbackTCP {
-			return nil, fmt.Errorf("hysteria2 QUIC: %w", err)
-		}
+	if dialFn == nil {
+		return nil, fmt.Errorf("no QUIC dial function available")
 	}
 
-	// TCP 降级：使用 Trojan 兼容格式（TLS + SHA224 密码认证）
-	// 这样即使没有 QUIC 支持，也能通过兼容的服务器连接
-	return h.dialTCPFallback(ctx, metadata)
+	conn, err := dialFn(ctx, h.server, h.password, h.sni, h.skipCert)
+	if err != nil {
+		return nil, err
+	}
+
+	// 类型断言获取 QUIC 连接
+	quicConn, ok := conn.(*hy2QUICConn)
+	if !ok {
+		conn.Close()
+		return nil, fmt.Errorf("unexpected conn type from QUIC dial")
+	}
+
+	return quicConn, nil
 }
 
 // dialTCPFallback TCP 降级模式（对应 Hysteria2 客户端的 fallback-tcp 选项）
