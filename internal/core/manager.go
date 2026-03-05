@@ -6,50 +6,73 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"clashgo/internal/config"
 	"clashgo/internal/enhance"
 	"clashgo/internal/geodata"
+	"clashgo/internal/proxy"
 	"clashgo/internal/utils"
-
-	mihomoConstant "github.com/metacubex/mihomo/constant"
-	"github.com/metacubex/mihomo/hub"
-	"github.com/metacubex/mihomo/hub/executor"
-	mihomoLog "github.com/metacubex/mihomo/log"
 
 	"go.uber.org/zap"
 )
 
-// RunningMode 核心当前运行模式
+// ── 运行状态 ──────────────────────────────────────────────────────────────────
+
+// RunningMode 对应 Clash Verge Rev 的 RunningMode 枚举
+//
+//	原版 Rust：Service / Sidecar / NotRunning
+//	本实现：  Sidecar / NotRunning（无系统服务路径，直接管理子进程）
 type RunningMode int32
 
 const (
 	ModeNotRunning RunningMode = iota
-	ModeRunning
+	ModeSidecar                // mihomo 以子进程（sidecar）方式运行
 )
 
 func (m RunningMode) String() string {
-	if m == ModeRunning {
-		return "Running"
+	switch m {
+	case ModeSidecar:
+		return "Sidecar"
+	default:
+		return "NotRunning"
 	}
-	return "NotRunning"
 }
 
-// Manager 管理 Mihomo 代理核心的生命周期
-//
-// 架构: 同进程嵌入模式
-//
-// Mihomo 作为 Go 库直接 import，通过 hub.Parse() 在同进程中启动。
-// 配置热加载通过 executor.ApplyConfig() 实现，无需 HTTP API 或子进程通信。
-// 优势：零 IPC 延迟、零序列化开销、错误直接以 Go error 返回。
-type Manager struct {
-	mu     sync.Mutex
-	mode   atomic.Int32
-	cfgMgr *config.Manager
+// configUpdateDebounce 对应原版 timing::CONFIG_UPDATE_DEBOUNCE
+// 防止配置变更事件风暴导致频繁重载
+const configUpdateDebounce = 500 * time.Millisecond
 
-	logBuf      *ringBuffer // 最近 500 条日志
+// apiReadyTimeout 等待 mihomo HTTP API 就绪的超时时间
+const apiReadyTimeout = 15 * time.Second
+
+// ── Manager ───────────────────────────────────────────────────────────────────
+
+// Manager 管理自实现代理内核的生命周期
+//
+// 架构：自实现内核模式（internal/proxy 包）
+//
+//	不依赖 github.com/metacubex/mihomo 库，
+//	自己实现 Tunnel / Mixed Listener / Rules / Outbound。
+//
+// 生命周期（对照原版 lifecycle.rs）：
+//
+//	Start  → generateRuntime → proxy.Parse(runtime.yaml)
+//	Reload → generateRuntime → proxy.ApplyConfig  [debounce]
+//	Stop   → proxy.Kernel.Stop()
+type Manager struct {
+	mu   sync.Mutex
+	mode atomic.Int32
+
+	cfgMgr *config.Manager
+	kernel *proxy.Kernel // 自实现代理内核
+
+	// 日志（对应原版 CLASH_LOGGER AsyncLogger）
+	logBuf      *ringBuffer
 	logCallback func(level, msg string)
-	logDone     chan struct{} // 用于停止日志订阅 goroutine
+
+	// 防抖（对应原版 last_update + timing::CONFIG_UPDATE_DEBOUNCE）
+	lastUpdate time.Time
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -60,7 +83,7 @@ var (
 	managerOnce   sync.Once
 )
 
-// NewManager 创建 CoreManager 实例
+// NewManager 创建 CoreManager 单例（对应原版 CoreManager::new）
 func NewManager(cfgMgr *config.Manager) *Manager {
 	m := &Manager{
 		cfgMgr: cfgMgr,
@@ -77,76 +100,49 @@ func Global() *Manager {
 	return globalManager
 }
 
-// Start 生成运行时配置并在同进程中启动 Mihomo
+// ── 生命周期（对照原版 lifecycle.rs）────────────────────────────────────────
+
+// Start 启动自实现代理内核
 func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.mode.Load() == int32(ModeRunning) {
+	if m.mode.Load() == int32(ModeSidecar) {
 		return fmt.Errorf("core already running")
 	}
 
 	m.ctx, m.cancel = context.WithCancel(ctx)
 
-	// 设置 Mihomo 工作目录
 	homeDir := utils.Dirs().HomeDir()
-	mihomoConstant.SetHomeDir(homeDir)
-	mihomoConstant.SetConfig("")
+	utils.Log().Info("启动自实现代理内核", zap.String("homeDir", homeDir))
 
-	utils.Log().Info("Starting Mihomo in-process",
-		zap.String("homeDir", homeDir),
-	)
-
-	// 预下载 GeoIP/GeoSite 数据文件（多镜像 fallback，确保国内可用）
+	// 预下载 GeoData
 	geodata.EnsureGeoData(homeDir)
 
+	// 生成运行时配置
 	runtimePath, err := m.generateRuntimeConfig()
 	if err != nil {
-		utils.Log().Warn("Config generation failed, using base clash config", zap.Error(err))
+		utils.Log().Warn("配置生成失败", zap.Error(err))
 		runtimePath = utils.Dirs().ClashPath()
 	}
 
-	return m.startInProcess(runtimePath)
-}
-
-// startInProcess 读取配置文件并通过 hub.Parse() 在同进程中启动 Mihomo
-func (m *Manager) startInProcess(configPath string) error {
-	configBytes, err := os.ReadFile(configPath)
+	// 读取 runtime.yaml 并启动自实现内核
+	configBytes, err := os.ReadFile(runtimePath)
 	if err != nil {
-		return fmt.Errorf("read config %s: %w", configPath, err)
+		return fmt.Errorf("read runtime config: %w", err)
 	}
 
-	// 获取配置中的 external-controller 和 secret
-	clash := m.cfgMgr.GetClash()
-	server := m.getServer(clash)
-	secret := m.getSecret(clash)
-
-	// 构造 hub options
-	var opts []hub.Option
-	opts = append(opts, hub.WithExternalController(server))
-	if secret != "" {
-		opts = append(opts, hub.WithSecret(secret))
+	if err := proxy.Parse(configBytes, utils.Log()); err != nil {
+		return fmt.Errorf("proxy kernel parse: %w", err)
 	}
 
-	// 核心调用: hub.Parse() 在同进程中初始化 Mihomo
-	// 包括: 解析配置 → 启动 DNS → 启动 Tunnel → 启动监听器 → 启动 external-controller
-	if err := hub.Parse(configBytes, opts...); err != nil {
-		return fmt.Errorf("mihomo hub.Parse: %w", err)
-	}
-
-	m.mode.Store(int32(ModeRunning))
-	utils.Log().Info("Mihomo started in-process",
-		zap.String("config", configPath),
-		zap.String("controller", server),
-	)
-
-	// 启动日志订阅
-	m.startLogSubscription()
-
+	m.kernel = proxy.GlobalKernel()
+	m.mode.Store(int32(ModeSidecar))
+	utils.Log().Info("自实现代理内核已启动")
 	return nil
 }
 
-// Stop 停止 Mihomo (在同进程模式下，关闭监听器和 tunnel)
+// Stop 停止内核
 func (m *Manager) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -156,127 +152,91 @@ func (m *Manager) Stop() error {
 		m.cancel = nil
 	}
 
-	// 停止日志订阅
-	if m.logDone != nil {
-		close(m.logDone)
-		m.logDone = nil
+	if m.kernel != nil {
+		m.kernel.Stop()
+		m.kernel = nil
 	}
 
-	// 同进程模式下，Mihomo 的 Tunnel 和 Listener 在下次 ApplyConfig 时会被替换
-	// 我们标记为未运行即可
 	m.mode.Store(int32(ModeNotRunning))
-	utils.Log().Info("Mihomo core stopped (in-process)")
+	utils.Log().Info("自实现代理内核已停止")
 	return nil
 }
 
-// Restart 重启：重新生成配置并 Apply
-// 核心已运行时走热加载路径（UpdateConfig），未运行时走完整启动路径
+// Restart 重启内核（对应原版 restart_core = stop_core + start_core）
 func (m *Manager) Restart() error {
-	if m.mode.Load() == int32(ModeRunning) {
-		// 已运行：重新生成配置并热加载（等效于完全重启但无需重建 tunnel/listener）
-		return m.UpdateConfig()
+	utils.Log().Info("Restarting Mihomo sidecar")
+	if err := m.Stop(); err != nil {
+		utils.Log().Warn("Stop failed during restart", zap.Error(err))
 	}
-	// 未运行：完整启动
 	return m.Start(context.Background())
 }
 
-// UpdateConfig 重新生成增强配置并热加载（同进程，无需重启）
+// UpdateConfig 重新生成增强配置并热加载（对应原版 update_config → apply_config → reload_config）
+//
+// 包含 debounce 防抖：短时间内重复调用直接跳过。
 func (m *Manager) UpdateConfig() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	utils.Log().Info("[链路] UpdateConfig: 生成运行时配置")
+	// Debounce（对应原版 should_update_config）
+	now := time.Now()
+	if !m.lastUpdate.IsZero() && now.Sub(m.lastUpdate) < configUpdateDebounce {
+		utils.Log().Debug("UpdateConfig debounced",
+			zap.Duration("elapsed", now.Sub(m.lastUpdate)),
+		)
+		return nil
+	}
+	m.lastUpdate = now
+
+	utils.Log().Info("UpdateConfig: generating runtime config")
+
 	runtimePath, err := m.generateRuntimeConfig()
 	if err != nil {
-		utils.Log().Error("[链路] generateRuntimeConfig 失败", zap.Error(err))
+		utils.Log().Error("generateRuntimeConfig failed", zap.Error(err))
 		return fmt.Errorf("generate config: %w", err)
 	}
-	utils.Log().Info("[链路] 运行时配置已生成", zap.String("path", runtimePath))
 
-	// 读取并打印配置文件大小
 	if info, e := os.Stat(runtimePath); e == nil {
-		utils.Log().Info("[链路] runtime.yaml", zap.Int64("bytes", info.Size()))
+		utils.Log().Info("runtime.yaml ready", zap.Int64("bytes", info.Size()))
 	}
 
-	if m.mode.Load() != int32(ModeRunning) {
-		utils.Log().Info("[链路] 核心未运行，启动核心")
-		return m.startInProcess(runtimePath)
+	// 核心未运行：完整启动
+	if m.mode.Load() != int32(ModeSidecar) {
+		utils.Log().Info("内核未运行，执行完整启动")
+		return m.Start(context.Background())
 	}
 
-	utils.Log().Info("[链路] 核心运行中，热加载配置")
-	return m.reloadConfigInProcess(runtimePath)
+	// 内核运行中：热加载
+	utils.Log().Info("内核运行中，热加载配置")
+	return m.reloadViaKernel(runtimePath)
 }
 
-// reloadConfigInProcess 通过 executor 同进程热加载配置
-func (m *Manager) reloadConfigInProcess(configPath string) error {
-	cfg, err := executor.ParseWithPath(configPath)
-	if err != nil {
-		return fmt.Errorf("parse config for reload: %w", err)
-	}
+// ── 子进程管理（内部）────────────────────────────────────────────────────────
 
-	executor.ApplyConfig(cfg, false)
-	utils.Log().Info("Config reloaded in-process", zap.String("path", configPath))
+// (startSidecar removed — using internal proxy kernel instead)
+
+// reloadViaKernel 通过自实现内核热加载
+func (m *Manager) reloadViaKernel(runtimePath string) error {
+	if m.kernel == nil {
+		return fmt.Errorf("kernel not initialized")
+	}
+	configBytes, err := os.ReadFile(runtimePath)
+	if err != nil {
+		return fmt.Errorf("read runtime config: %w", err)
+	}
+	cfg, err := proxy.ParseConfig(configBytes)
+	if err != nil {
+		return fmt.Errorf("parse kernel config: %w", err)
+	}
+	if err := m.kernel.ApplyConfig(cfg); err != nil {
+		return fmt.Errorf("apply kernel config: %w", err)
+	}
+	utils.Log().Info("内核配置热加载成功", zap.String("path", runtimePath))
 	return nil
 }
 
-// RunningMode 返回当前运行模式
-func (m *Manager) RunningMode() string {
-	return RunningMode(m.mode.Load()).String()
-}
-
-// IsRunning 检查核心是否在运行
-func (m *Manager) IsRunning() bool {
-	return m.mode.Load() == int32(ModeRunning)
-}
-
-// StartLogStream 订阅 Mihomo 内部日志 channel
-func (m *Manager) StartLogStream(callback func(level, msg string)) {
-	m.logCallback = callback
-}
-
-// GetLogs 返回最近的日志条目（来自 ring buffer）
-func (m *Manager) GetLogs() []string {
-	return m.logBuf.All()
-}
-
-// ─── 内部实现 ─────────────────────────────────────────────────────────────────
-
-// startLogSubscription 订阅 mihomo 内部的 log channel
-func (m *Manager) startLogSubscription() {
-	if m.logDone != nil {
-		close(m.logDone)
-	}
-	m.logDone = make(chan struct{})
-
-	logCh := mihomoLog.Subscribe()
-	done := m.logDone
-
-	go func() {
-		defer mihomoLog.UnSubscribe(logCh)
-		for {
-			select {
-			case <-done:
-				return
-			case logEvent, ok := <-logCh:
-				if !ok {
-					return
-				}
-				level := logEvent.LogLevel.String()
-				msg := logEvent.Payload
-				m.handleLogLine(level, msg)
-			}
-		}
-	}()
-}
-
-// handleLogLine 处理单条日志：存入 ring buffer + 触发回调
-func (m *Manager) handleLogLine(level, msg string) {
-	m.logBuf.Push(fmt.Sprintf("[%s] %s", level, msg))
-	if m.logCallback != nil {
-		m.logCallback(level, msg)
-	}
-}
-
+// generateRuntimeConfig 运行增强流水线，生成 runtime.yaml
+// 对应原版 Config::generate → save_yaml(runtime.yaml)
 func (m *Manager) generateRuntimeConfig() (string, error) {
 	verge := m.cfgMgr.GetVerge()
 	clashBase := m.cfgMgr.GetClash()
@@ -289,41 +249,76 @@ func (m *Manager) generateRuntimeConfig() (string, error) {
 
 	runtimePath := utils.Dirs().RuntimeConfigPath()
 	if err := writeConfigYAML(runtimePath, result.Config); err != nil {
-		return "", fmt.Errorf("save runtime config: %w", err)
+		return "", fmt.Errorf("write runtime.yaml: %w", err)
 	}
 
 	m.cfgMgr.SetRuntime(result.Runtime)
 	return runtimePath, nil
 }
 
-func (m *Manager) getServer(clash config.IClashBase) string {
-	if ctrl, ok := clash["external-controller"].(string); ok && ctrl != "" {
-		return ctrl
-	}
-	return "127.0.0.1:9097"
+// getCoreName 返回当前配置的核心名称（默认 verge-mihomo）
+func (m *Manager) getCoreName() string {
+	verge := m.cfgMgr.GetVerge()
+	return verge.GetClashCore()
 }
 
-func (m *Manager) getSecret(clash config.IClashBase) string {
-	if s, ok := clash["secret"].(string); ok {
-		return s
-	}
-	return ""
+// ── 状态查询 ──────────────────────────────────────────────────────────────────
+
+// RunningMode 返回当前运行模式字符串
+func (m *Manager) RunningMode() string {
+	return RunningMode(m.mode.Load()).String()
 }
 
-// ─── ringBuffer 定长循环日志缓冲 ─────────────────────────────────────────────
+// IsRunning 返回核心是否在运行
+func (m *Manager) IsRunning() bool {
+	return m.mode.Load() == int32(ModeSidecar)
+}
+
+// ── 日志 API ──────────────────────────────────────────────────────────────────
+
+// StartLogStream 注册前端日志实时回调
+func (m *Manager) StartLogStream(callback func(level, msg string)) {
+	m.logCallback = callback
+}
+
+// GetLogs 返回最近日志条目
+func (m *Manager) GetLogs() []string {
+	return m.logBuf.All()
+}
+
+// ── 工具函数 ──────────────────────────────────────────────────────────────────
+
+// extractString 从 map 安全读取字符串，不存在时返回 defaultVal
+func extractString(m map[string]interface{}, key, defaultVal string) string {
+	if v, ok := m[key].(string); ok && v != "" {
+		return v
+	}
+	return defaultVal
+}
+
+// ── ringBuffer：定长循环日志缓冲 ─────────────────────────────────────────────
+//
+// 数据结构：环形数组（ring buffer）
+//   - head：下一次写入槽位的绝对偏移（单调递增，不对 cap 取模）
+//   - size：当前有效条目数，上限 = cap
+//
+// 读取 oldest 槽位：
+//   - 未满（size < cap）：oldest = 0
+//   - 已满（size == cap）：oldest = head % cap
 
 type ringBuffer struct {
 	mu   sync.Mutex
 	buf  []string
-	head int
-	size int
-	cap  int
+	head int // 下一次写入的绝对偏移（单调递增）
+	size int // 当前有效条目数
+	cap  int // 容量上限
 }
 
 func newRingBuffer(capacity int) *ringBuffer {
 	return &ringBuffer{buf: make([]string, capacity), cap: capacity}
 }
 
+// Push 写入一条日志；buffer 满时覆盖最旧条目
 func (r *ringBuffer) Push(s string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -334,6 +329,7 @@ func (r *ringBuffer) Push(s string) {
 	}
 }
 
+// All 按时间顺序（最旧→最新）返回全部条目的深拷贝
 func (r *ringBuffer) All() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -341,12 +337,14 @@ func (r *ringBuffer) All() []string {
 		return nil
 	}
 	out := make([]string, r.size)
-	start := r.head - r.size
-	if start < 0 {
-		start = 0
+	var oldest int
+	if r.size < r.cap {
+		oldest = 0 // 未满：从 0 顺序读
+	} else {
+		oldest = r.head % r.cap // 已满：head 指向即将被覆盖的最旧条目
 	}
 	for i := 0; i < r.size; i++ {
-		out[i] = r.buf[(start+i)%r.cap]
+		out[i] = r.buf[(oldest+i)%r.cap]
 	}
 	return out
 }
