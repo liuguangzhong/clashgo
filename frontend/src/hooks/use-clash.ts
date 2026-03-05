@@ -68,9 +68,7 @@ export const useClash = () => {
     mutateClash();
   });
 
-  const version = versionData?.meta
-    ? `${versionData.version} Mihomo`
-    : versionData?.version || "-";
+  const version = versionData?.version || "-";
 
   return {
     clash,

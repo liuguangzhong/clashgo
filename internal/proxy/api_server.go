@@ -196,12 +196,11 @@ func (s *APIServer) handleRuleProviders(w http.ResponseWriter, r *http.Request) 
 
 // ── Route Handlers ────────────────────────────────────────────────────────────
 
-// GET /version — 必须返回 {"version": "...", "meta": true}
-// meta 必须是 bool 类型，Go client GetVersion 会 unmarshal 到 struct{Meta bool}
+// GET /version — 返回自实现内核版本
 func (s *APIServer) handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"version": "ClashGo/1.0.0",
-		"meta":    true,
+		"version": "ClashGo v0.3.0",
+		"meta":    false,
 	})
 }
 
