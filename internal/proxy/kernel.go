@@ -96,7 +96,7 @@ func Parse(configBytes []byte, log *zap.Logger) error {
 
 // ApplyConfig 热加载配置
 //
-// 顺序：DNS → GeoIP → Proxies+Groups → Rules → Tunnel → Listeners → API Server
+// 顺序：DNS → GeoIP → Proxies+Groups → Rules → Tunnel → Listeners（端口变化时） → API Server（端口变化时）
 func (k *Kernel) ApplyConfig(cfg *KernelConfig) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -170,13 +170,25 @@ func (k *Kernel) ApplyConfig(cfg *KernelConfig) error {
 	k.tunnel.UpdateProxies(proxies)
 	k.tunnel.UpdateRules(rules)
 
-	// ── 6. 重建监听器 ────────────────────────────────────────────────────────
-	if err := k.updateListeners(cfg); err != nil {
-		return fmt.Errorf("update listeners: %w", err)
+	// ── 6. 重建监听器（仅端口/bind 变化时）────────────────────────────────
+	listenerChanged := k.currentCfg == nil ||
+		k.currentCfg.MixedPort != cfg.MixedPort ||
+		k.currentCfg.Port != cfg.Port ||
+		k.currentCfg.SocksPort != cfg.SocksPort ||
+		k.currentCfg.AllowLan != cfg.AllowLan
+	if listenerChanged {
+		if err := k.updateListeners(cfg); err != nil {
+			return fmt.Errorf("update listeners: %w", err)
+		}
+	} else {
+		k.log.Info("Listeners unchanged, skipping restart")
 	}
 
-	// ── 7. API Server ────────────────────────────────────────────────────────
-	if cfg.ExternalController != "" {
+	// ── 7. API Server（仅首次启动或地址变化时）───────────────────────────────
+	apiChanged := k.currentCfg == nil ||
+		k.currentCfg.ExternalController != cfg.ExternalController ||
+		k.currentCfg.Secret != cfg.Secret
+	if cfg.ExternalController != "" && apiChanged {
 		if k.apiServer != nil {
 			k.apiServer.Stop()
 		}
@@ -186,6 +198,16 @@ func (k *Kernel) ApplyConfig(cfg *KernelConfig) error {
 		} else {
 			k.log.Info("API server started", zap.String("addr", cfg.ExternalController))
 		}
+	} else if cfg.ExternalController != "" && k.apiServer == nil {
+		// 首次启动但标记未变
+		k.apiServer = NewAPIServer(k, cfg.Secret)
+		if err := k.apiServer.Start(cfg.ExternalController); err != nil {
+			k.log.Warn("API server start failed", zap.Error(err))
+		} else {
+			k.log.Info("API server started", zap.String("addr", cfg.ExternalController))
+		}
+	} else {
+		k.log.Info("API server unchanged, skipping restart")
 	}
 
 	// ── 8. TUN 透明代理 ───────────────────────────────────────────────────────
