@@ -10,8 +10,8 @@ import (
 
 	"clashgo/internal/utils"
 
-	wailsLogger "github.com/wailsapp/wails/v2/pkg/logger"
 	"github.com/wailsapp/wails/v2"
+	wailsLogger "github.com/wailsapp/wails/v2/pkg/logger"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/linux"
@@ -63,7 +63,7 @@ func main() {
 		Fullscreen:        false,
 		Frameless:         false,
 		StartHidden:       app.StartHidden(),
-		HideWindowOnClose: true, // 关闭窗口时最小化到托盘
+		HideWindowOnClose: false, // 关闭窗口时退出程序
 
 		AssetServer: &assetserver.Options{
 			Assets: assets,
