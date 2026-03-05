@@ -43,7 +43,7 @@ Cflags:
 Libs:
 PCEOF
     export PKG_CONFIG_PATH="$COMPAT_PC_DIR${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
-    warn "webkit2gtk-4.0 不存在，已创建兼容重定向 → webkit2gtk-4.1"
+    echo "! webkit2gtk-4.0 not found, created compat redirect -> webkit2gtk-4.1"
 fi
 
 
