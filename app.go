@@ -248,6 +248,13 @@ func (a *App) gracefulShutdown() {
 	log := utils.Log()
 	log.Info("Graceful shutdown initiated...")
 
+	// watchdog: 无论清理是否卡死，3 秒内强制退出
+	go func() {
+		time.Sleep(3 * time.Second)
+		log.Info("Force exit (watchdog timeout)")
+		os.Exit(0)
+	}()
+
 	if a.hotkeyMgr != nil {
 		a.hotkeyMgr.Unregister()
 	}
@@ -265,8 +272,6 @@ func (a *App) gracefulShutdown() {
 	}
 
 	log.Info("ClashGo shutdown complete")
-
-	// 强制退出进程，确保所有后台 goroutine 都停止
 	os.Exit(0)
 }
 
