@@ -10,7 +10,8 @@ vendor/
 
 # ── Node / Frontend ────────────────────
 frontend/node_modules/
-frontend/dist/
+frontend/dist/*
+!frontend/dist/.gitkeep
 frontend/.vite/
 *.tsbuildinfo
 
