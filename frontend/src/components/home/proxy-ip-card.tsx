@@ -155,7 +155,7 @@ export const ProxyIpCard = () => {
                         {error}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: "block" }}>
-                        请先开启系统代理
+                        请先在代理页选择节点
                     </Typography>
                 </Box>
             ) : data ? (

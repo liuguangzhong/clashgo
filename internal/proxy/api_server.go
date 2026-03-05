@@ -179,23 +179,141 @@ func (s *APIServer) handleProxies(w http.ResponseWriter, r *http.Request) {
 	}
 	proxies := s.kernel.tunnel.proxies.Load().(map[string]Outbound)
 	result := make(map[string]interface{})
+
+	// 辅助函数：把 Outbound 类型转成 Mihomo 兼容的 type 字符串
+	proxyTypeName := func(p Outbound) string {
+		switch p.(type) {
+		case *DirectOutbound, *DirectUDPOutbound:
+			return "Direct"
+		case *RejectOutbound:
+			return "Reject"
+		case *ShadowsocksOutbound, *ShadowsocksUDPOutbound:
+			return "Shadowsocks"
+		case *VMessOutbound:
+			return "Vmess"
+		case *VLESSOutbound:
+			return "Vless"
+		case *TrojanOutbound:
+			return "Trojan"
+		case *Socks5Outbound:
+			return "Socks5"
+		case *HttpOutbound:
+			return "Http"
+		case *SSHOutbound:
+			return "Ssh"
+		case *Hysteria2Outbound:
+			return "Hysteria2"
+		case *TUICOutbound:
+			return "Tuic"
+		case *WireGuardOutbound:
+			return "WireGuard"
+		case *SelectGroup:
+			return "Selector"
+		case *URLTestGroup:
+			return "URLTest"
+		case *FallbackGroup:
+			return "Fallback"
+		case *LoadBalanceGroup:
+			return "LoadBalance"
+		default:
+			return "Unknown"
+		}
+	}
+
+	// 收集所有代理组名（用于构建 GLOBAL）
+	var groupNames []string
+
 	for name, p := range proxies {
 		switch v := p.(type) {
 		case *SelectGroup:
-			result[name] = GroupInfo(v)
+			info := GroupInfo(v)
+			result[name] = map[string]interface{}{
+				"name":    info.Name,
+				"type":    info.Type,
+				"now":     info.Now,
+				"all":     info.All,
+				"alive":   true,
+				"history": []interface{}{},
+				"udp":     true,
+			}
+			if name != "DIRECT" && name != "REJECT" {
+				groupNames = append(groupNames, name)
+			}
 		case *URLTestGroup:
-			result[name] = GroupInfo(v)
+			info := GroupInfo(v)
+			result[name] = map[string]interface{}{
+				"name":    info.Name,
+				"type":    info.Type,
+				"now":     info.Now,
+				"all":     info.All,
+				"alive":   true,
+				"history": []interface{}{},
+				"udp":     true,
+			}
+			groupNames = append(groupNames, name)
 		case *FallbackGroup:
-			result[name] = GroupInfo(v)
+			info := GroupInfo(v)
+			result[name] = map[string]interface{}{
+				"name":    info.Name,
+				"type":    info.Type,
+				"now":     info.Now,
+				"all":     info.All,
+				"alive":   true,
+				"history": []interface{}{},
+				"udp":     true,
+			}
+			groupNames = append(groupNames, name)
 		case *LoadBalanceGroup:
-			result[name] = GroupInfo(v)
+			info := GroupInfo(v)
+			result[name] = map[string]interface{}{
+				"name":    info.Name,
+				"type":    info.Type,
+				"now":     info.Now,
+				"all":     info.All,
+				"alive":   true,
+				"history": []interface{}{},
+				"udp":     true,
+			}
+			groupNames = append(groupNames, name)
 		default:
-			result[name] = map[string]string{
-				"name": name,
-				"type": fmt.Sprintf("%T", p),
+			// 个体代理节点
+			result[name] = map[string]interface{}{
+				"name":    name,
+				"type":    proxyTypeName(v),
+				"alive":   true,
+				"history": []interface{}{},
+				"udp":     true,
 			}
 		}
 	}
+
+	// 确保 DIRECT / REJECT 存在
+	if _, ok := result["DIRECT"]; !ok {
+		result["DIRECT"] = map[string]interface{}{
+			"name": "DIRECT", "type": "Direct",
+			"alive": true, "history": []interface{}{}, "udp": true,
+		}
+	}
+	if _, ok := result["REJECT"]; !ok {
+		result["REJECT"] = map[string]interface{}{
+			"name": "REJECT", "type": "Reject",
+			"alive": true, "history": []interface{}{}, "udp": false,
+		}
+	}
+
+	// 构建 GLOBAL（包含所有代理组）
+	if _, ok := result["GLOBAL"]; !ok {
+		result["GLOBAL"] = map[string]interface{}{
+			"name":    "GLOBAL",
+			"type":    "Selector",
+			"now":     "",
+			"all":     groupNames,
+			"alive":   true,
+			"history": []interface{}{},
+			"udp":     true,
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{"proxies": result})
 }
 
