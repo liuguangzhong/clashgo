@@ -13,7 +13,6 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -201,27 +200,28 @@ func (c *hy2QUICConn) DialStream(ctx context.Context, metadata *Metadata) (net.C
 		return nil, fmt.Errorf("[hy2] open stream 失败: %w", err)
 	}
 
-	// TCPRequest: [varint 0x401][varint addr_len][addr][varint pad_len][pad]
+	// TCPRequest: [QUIC varint 0x401][QUIC varint addr_len][addr][QUIC varint pad_len][pad]
+	// 注意：必须使用 QUIC varint (RFC 9000)，不是 Go 标准库的 LEB128！
 	var buf []byte
-	buf = appendUvarint(buf, 0x401)
-	buf = appendUvarint(buf, uint64(len(addr)))
+	buf = appendQUICVarint(buf, 0x401)
+	buf = appendQUICVarint(buf, uint64(len(addr)))
 	buf = append(buf, addr...)
-	buf = appendUvarint(buf, 0)
+	buf = appendQUICVarint(buf, 0) // padding length = 0
 
 	if _, err := stream.Write(buf); err != nil {
 		stream.Close()
 		return nil, fmt.Errorf("[hy2] 写 TCPRequest 失败: %w", err)
 	}
-	log.Printf("[hy2] TCPRequest 已发送: addr=%s", addr)
+	log.Printf("[hy2] TCPRequest 已发送: addr=%s (frame=%x)", addr, buf)
 
-	// TCPResponse: [uint8 status][varint msg_len][msg][varint pad_len][pad]
+	// TCPResponse: [uint8 status][QUIC varint msg_len][msg][QUIC varint pad_len][pad]
 	sb := make([]byte, 1)
 	if _, err := io.ReadFull(stream, sb); err != nil {
 		stream.Close()
 		return nil, fmt.Errorf("[hy2] 读 TCPResponse status 失败: %w", err)
 	}
 
-	msgLen, err := binary.ReadUvarint(ioByteReader(stream))
+	msgLen, err := readQUICVarint(stream)
 	if err != nil {
 		stream.Close()
 		return nil, fmt.Errorf("[hy2] 读 msg_len 失败: %w", err)
@@ -233,7 +233,7 @@ func (c *hy2QUICConn) DialStream(ctx context.Context, metadata *Metadata) (net.C
 		msg = string(mb)
 	}
 
-	padLen, _ := binary.ReadUvarint(ioByteReader(stream))
+	padLen, _ := readQUICVarint(stream)
 	if padLen > 0 {
 		io.ReadFull(stream, make([]byte, padLen))
 	}
@@ -288,19 +288,52 @@ func (c *hy2StreamConn) SetDeadline(t time.Time) error      { return nil }
 func (c *hy2StreamConn) SetReadDeadline(t time.Time) error  { return nil }
 func (c *hy2StreamConn) SetWriteDeadline(t time.Time) error { return nil }
 
-// ── 辅助 ──────────────────────────────────────────────────────────────────────
+// ── QUIC Varint (RFC 9000) ────────────────────────────────────────────────────
+// 参考: apernet/hysteria/core/v2/internal/protocol/proxy.go varintPut()
+//
+// QUIC varint 格式（与 Go binary.PutUvarint 的 LEB128 完全不同！）：
+//   高2位=00 → 1字节, 值范围 0-63
+//   高2位=01 → 2字节, 值范围 0-16383
+//   高2位=10 → 4字节, 值范围 0-1073741823
+//   高2位=11 → 8字节
 
-func appendUvarint(buf []byte, v uint64) []byte {
-	tmp := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(tmp, v)
-	return append(buf, tmp[:n]...)
+const (
+	maxQUICVarInt1 = 63
+	maxQUICVarInt2 = 16383
+	maxQUICVarInt4 = 1073741823
+	maxQUICVarInt8 = 4611686018427387903
+)
+
+func appendQUICVarint(buf []byte, v uint64) []byte {
+	if v <= maxQUICVarInt1 {
+		return append(buf, byte(v))
+	}
+	if v <= maxQUICVarInt2 {
+		return append(buf, byte(v>>8)|0x40, byte(v))
+	}
+	if v <= maxQUICVarInt4 {
+		return append(buf, byte(v>>24)|0x80, byte(v>>16), byte(v>>8), byte(v))
+	}
+	if v <= maxQUICVarInt8 {
+		return append(buf, byte(v>>56)|0xc0, byte(v>>48), byte(v>>40), byte(v>>32),
+			byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
+	}
+	panic(fmt.Sprintf("QUIC varint overflow: %d", v))
 }
 
-type ioByteReaderImpl struct{ r io.Reader }
-
-func ioByteReader(r io.Reader) io.ByteReader { return &ioByteReaderImpl{r: r} }
-func (b *ioByteReaderImpl) ReadByte() (byte, error) {
-	buf := [1]byte{}
-	_, err := b.r.Read(buf[:])
-	return buf[0], err
+func readQUICVarint(r io.Reader) (uint64, error) {
+	b := [1]byte{}
+	if _, err := io.ReadFull(r, b[:]); err != nil {
+		return 0, err
+	}
+	first := b[0]
+	length := 1 << (first >> 6) // 1, 2, 4, or 8
+	val := uint64(first & 0x3f)
+	for i := 1; i < length; i++ {
+		if _, err := io.ReadFull(r, b[:]); err != nil {
+			return 0, err
+		}
+		val = (val << 8) | uint64(b[0])
+	}
+	return val, nil
 }
