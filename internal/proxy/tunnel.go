@@ -12,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -119,8 +120,11 @@ func (t *Tunnel) HandleTCPConn(conn net.Conn, metadata *Metadata) {
 	// 选出出口代理
 	outbound, err := t.pickOutbound(metadata)
 	if err != nil {
+		log.Printf("[Tunnel] pickOutbound 失败: dst=%s:%d err=%v", metadata.DstHost, metadata.DstPort, err)
 		return
 	}
+
+	log.Printf("[Tunnel] HandleTCPConn: %s:%d → outbound=%s", metadata.DstHost, metadata.DstPort, outbound.Name())
 
 	// 通过出口代理拨号目标地址
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -128,6 +132,7 @@ func (t *Tunnel) HandleTCPConn(conn net.Conn, metadata *Metadata) {
 
 	remote, err := outbound.DialTCP(ctx, metadata)
 	if err != nil {
+		log.Printf("[Tunnel] DialTCP 失败: dst=%s:%d outbound=%s err=%v", metadata.DstHost, metadata.DstPort, outbound.Name(), err)
 		return
 	}
 	defer remote.Close()
