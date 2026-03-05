@@ -14,6 +14,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
+# ── 补全常见工具路径（兼容非交互 SSH 和各种 Linux 安装方式）──────────────────
+export PATH="$PATH:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin"
+export PATH="$PATH:$(go env GOPATH 2>/dev/null)/bin"
+# corepack shims（pnpm/yarn via corepack）
+[ -d /usr/local/node/lib/node_modules/corepack/shims ] && \
+    export PATH="/usr/local/node/lib/node_modules/corepack/shims:$PATH"
+# nvm / fnm / volta 常见 node 路径
+[ -d "$HOME/.local/share/pnpm" ]  && export PATH="$HOME/.local/share/pnpm:$PATH"
+[ -d "$HOME/.nvm/versions/node" ] && export PATH="$(ls -d $HOME/.nvm/versions/node/*/bin 2>/dev/null | tail -1):$PATH"
+
+# Wails binding generation 需要 DISPLAY；如未设置则使用 :0
+export DISPLAY="${DISPLAY:-:0}"
+
 # ── 颜色 ──────────────────────────────────────────────────────────────────────
 info()  { echo -e "\033[36m  $*\033[0m"; }
 ok()    { echo -e "\033[32m✓ $*\033[0m"; }
@@ -86,7 +99,8 @@ ok "Go: $(go version)"
 if [ "$GO_ONLY" = "0" ]; then
     if ! command -v wails >/dev/null 2>&1; then
         warn "Wails 未安装，正在安装..."
-        go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2
+        go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+        export PATH="$PATH:$(go env GOPATH)/bin"
         ok "Wails 已安装"
     else
         ok "Wails: $(wails version 2>/dev/null | head -1)"
