@@ -61,8 +61,8 @@ async function loadBindings() {
   }
 }
 
-// 立即加载
-loadBindings();
+// 立即加载，暴露 Promise 供其他函数等待绑定就绪
+const _bindingsReady = loadBindings();
 
 // ── 代理环境变量 ──────────────────────────────────────────────────────────────
 
@@ -535,6 +535,7 @@ export const isPortInUse = async (port: number) => {
 // ── 代理列表（Mihomo REST，直接通过 ClashAPI 访问）──────────────────────────
 
 export async function calcuProxyProviders() {
+  await _bindingsReady;
   const resp = await _ProxyAPI.GetProviders?.();
   if (!resp?.providers) return {};
   return Object.fromEntries(
@@ -554,6 +555,7 @@ export async function calcuProxies(): Promise<{
   records: Record<string, IProxyItem>;
   proxies: IProxyItem[];
 }> {
+  await _bindingsReady;
   const [proxyResp, providerRecord] = await Promise.all([
     _ProxyAPI.GetProxies?.(),
     calcuProxyProviders(),
