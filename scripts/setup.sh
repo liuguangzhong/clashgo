@@ -64,7 +64,7 @@ if command -v wails >/dev/null 2>&1; then
 else
     if [ "$HAS_GO" = true ]; then
         warn "Wails CLI 未安装，正在通过 go install 安装..."
-        if go install github.com/wailsapp/wails/v2/cmd/wails@v2.9.2 2>&1; then
+        if go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0 2>&1; then
             export PATH="$(go env GOPATH)/bin:$PATH"
             if command -v wails >/dev/null 2>&1; then
                 ok "Wails CLI 安装完成"
