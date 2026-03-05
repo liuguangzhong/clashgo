@@ -31,7 +31,7 @@ type SystemAPI struct {
 func NewSystemAPI() *SystemAPI {
 	return &SystemAPI{
 		sysProxy:  proxy.NewSysProxy(),
-		mihomoSrv: "127.0.0.1:19097",
+		mihomoSrv: "127.0.0.1:9097",
 	}
 }
 

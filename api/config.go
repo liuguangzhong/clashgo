@@ -100,7 +100,7 @@ func (a *ConfigAPI) GetClashInfo() config.ClashInfo {
 		httpPort = *verge.VergePort
 	}
 
-	server := "127.0.0.1:19097"
+	server := "127.0.0.1:9097"
 	if ctrl, ok := clash["external-controller"].(string); ok && ctrl != "" {
 		server = ctrl
 	}

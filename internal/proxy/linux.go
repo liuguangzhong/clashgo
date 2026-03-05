@@ -3,9 +3,13 @@
 package proxy
 
 import (
+	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"clashgo/internal/config"
 	"clashgo/internal/utils"
@@ -57,9 +61,9 @@ func (p *linuxProxy) detectDesktop() {
 		return
 	}
 
-	// fallback: 环境变量（仅当前进程生效，实际意义有限）
+	// fallback: 服务器/无桌面环境，通过写文件方式设置代理环境变量
 	p.desktopType = "env"
-	utils.Log().Warn("Unknown desktop environment, system proxy may not work correctly")
+	utils.Log().Warn("Unknown desktop environment, will set proxy via environment variables (/etc/environment + ~/.bashrc)")
 }
 
 // Apply 设置系统代理
@@ -89,8 +93,8 @@ func (p *linuxProxy) Apply(verge config.IVerge) error {
 	case "kde":
 		return p.applyKDE(host, port, bypass, pacEnabled)
 	default:
-		utils.Log().Warn("Cannot set system proxy: unsupported desktop environment")
-		return nil
+		// 服务器/无桌面环境：写入环境变量文件
+		return p.applyEnvProxy(host, port, bypass)
 	}
 }
 
@@ -101,8 +105,9 @@ func (p *linuxProxy) Reset() error {
 		return p.setGNOMEMode("none")
 	case "kde":
 		return p.applyKDE("", 0, "", false)
+	default:
+		return p.resetEnvProxy()
 	}
-	return nil
 }
 
 // GetCurrentProxy 获取当前系统代理配置
@@ -320,3 +325,136 @@ func portString(port int) string { return strconv.Itoa(port) }
 
 // 确保 strconv 被使用
 var _ = portString
+
+// ─── 服务器/无桌面环境：环境变量代理 ──────────────────────────────────────────
+
+const (
+	etcEnvironment   = "/etc/environment"
+	proxyMarkerBegin = "# ClashGo proxy begin"
+	proxyMarkerEnd   = "# ClashGo proxy end"
+)
+
+// applyEnvProxy 在服务器环境下设置代理环境变量
+// 1. 写入 /etc/environment（需要 root，对所有用户全局有效，需重新登录/source）
+// 2. 写入 ~/.bashrc 和 ~/.profile（当前用户，新 shell 自动生效）
+// 3. 打印 export 命令，用户可直接复制到当前 shell 立即生效
+func (p *linuxProxy) applyEnvProxy(host string, port int, bypass string) error {
+	proxyURL := fmt.Sprintf("http://%s:%d", host, port)
+	lines := []string{
+		proxyMarkerBegin,
+		fmt.Sprintf("http_proxy=%s", proxyURL),
+		fmt.Sprintf("HTTP_PROXY=%s", proxyURL),
+		fmt.Sprintf("https_proxy=%s", proxyURL),
+		fmt.Sprintf("HTTPS_PROXY=%s", proxyURL),
+		fmt.Sprintf("all_proxy=%s", proxyURL),
+		fmt.Sprintf("ALL_PROXY=%s", proxyURL),
+		fmt.Sprintf("no_proxy=%s", bypass),
+		fmt.Sprintf("NO_PROXY=%s", bypass),
+		proxyMarkerEnd,
+	}
+
+	// 尝试写入 /etc/environment（需要 root 权限）
+	if err := writeEnvBlock(etcEnvironment, lines); err != nil {
+		utils.Log().Warn("Cannot write /etc/environment (need root?), trying user files",
+			zap.Error(err))
+	}
+
+	// 写入用户 shell 配置（export 格式）
+	exportLines := make([]string, 0, len(lines))
+	exportLines = append(exportLines, proxyMarkerBegin)
+	for _, l := range lines[1 : len(lines)-1] {
+		exportLines = append(exportLines, "export "+l)
+	}
+	exportLines = append(exportLines, proxyMarkerEnd)
+
+	home, err := os.UserHomeDir()
+	if err == nil {
+		for _, rcFile := range []string{".bashrc", ".profile", ".zshrc"} {
+			path := filepath.Join(home, rcFile)
+			if _, statErr := os.Stat(path); statErr == nil {
+				_ = writeEnvBlock(path, exportLines)
+			}
+		}
+	}
+
+	// 打印可直接复制使用的 export 命令（在当前 shell 立即生效）
+	utils.Log().Info("Proxy environment variables set. To apply in CURRENT shell, run:")
+	utils.Log().Info(fmt.Sprintf("  export http_proxy=%s https_proxy=%s all_proxy=%s no_proxy='%s'",
+		proxyURL, proxyURL, proxyURL, bypass))
+	utils.Log().Info("Files updated: /etc/environment, ~/.bashrc, ~/.profile (if they exist)")
+	utils.Log().Info("NOTE: New SSH sessions will inherit proxy automatically; current session needs manual export")
+	return nil
+}
+
+// resetEnvProxy 清除服务器环境下的代理环境变量
+func (p *linuxProxy) resetEnvProxy() error {
+	if err := clearEnvBlock(etcEnvironment); err != nil {
+		utils.Log().Warn("Cannot clear /etc/environment", zap.Error(err))
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil {
+		for _, rcFile := range []string{".bashrc", ".profile", ".zshrc"} {
+			path := filepath.Join(home, rcFile)
+			if _, statErr := os.Stat(path); statErr == nil {
+				_ = clearEnvBlock(path)
+			}
+		}
+	}
+	utils.Log().Info("Proxy environment variables cleared from /etc/environment and shell rc files")
+	return nil
+}
+
+// writeEnvBlock 在文件中写入/替换 ClashGo 代理块
+// 若文件中已存在 marker 则替换，否则追加到末尾
+func writeEnvBlock(path string, lines []string) error {
+	// 读取原始内容
+	origContent := ""
+	if data, err := os.ReadFile(path); err == nil {
+		origContent = string(data)
+	}
+
+	// 删除旧的 ClashGo 块
+	cleaned := removeEnvBlock(origContent)
+
+	// 追加新块
+	newBlock := strings.Join(lines, "\n") + "\n"
+	newContent := strings.TrimRight(cleaned, "\n") + "\n" + newBlock
+
+	return os.WriteFile(path, []byte(newContent), 0644)
+}
+
+// clearEnvBlock 从文件中删除 ClashGo 代理块
+func clearEnvBlock(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	cleaned := removeEnvBlock(string(data))
+	return os.WriteFile(path, []byte(cleaned), 0644)
+}
+
+// removeEnvBlock 从文本内容中移除 ClashGo 代理标记块
+func removeEnvBlock(content string) string {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	var result []string
+	inBlock := false
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.TrimSpace(line) == proxyMarkerBegin {
+			inBlock = true
+			continue
+		}
+		if strings.TrimSpace(line) == proxyMarkerEnd {
+			inBlock = false
+			continue
+		}
+		if !inBlock {
+			result = append(result, line)
+		}
+	}
+	return strings.Join(result, "\n")
+}

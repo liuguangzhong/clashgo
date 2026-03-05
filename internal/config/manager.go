@@ -409,7 +409,7 @@ func defaultClashBase() IClashBase {
 		"allow-lan":           false,
 		"ipv6":                true,
 		"mode":                "rule",
-		"external-controller": "127.0.0.1:19097",
+		"external-controller": "127.0.0.1:9097",
 		"unified-delay":       true,
 		"secret":              "clashgo-secret",
 		// DNS 配置：确保 TUN 模式 dns-hijack 下即使没有激活的订阅，
@@ -484,17 +484,19 @@ func migrateClashBase(clash IClashBase) (changed bool) {
 	}
 
 	// ── 2. 补全 TUN exclude-process-name ─────────────────────────────────────
-	tunRaw, hasTUN := clash["tun"]
-	if !hasTUN {
-		return // 没有 tun 节点，用户没启用 TUN，无需处理
+	if tunRaw, hasTUN := clash["tun"]; hasTUN {
+		if tun, ok := tunRaw.(map[string]interface{}); ok {
+			if _, hasExclude := tun["exclude-process-name"]; !hasExclude {
+				tun["exclude-process-name"] = []string{"clashgo", "clashgo.exe"}
+				clash["tun"] = tun
+				changed = true
+			}
+		}
 	}
-	tun, ok := tunRaw.(map[string]interface{})
-	if !ok {
-		return
-	}
-	if _, hasExclude := tun["exclude-process-name"]; !hasExclude {
-		tun["exclude-process-name"] = []string{"clashgo", "clashgo.exe"}
-		clash["tun"] = tun
+
+	// ── 3. 修正 external-controller 端口（19097 → 9097 历史 bug 修复）──────────
+	if ctrl, ok := clash["external-controller"].(string); ok && ctrl == "127.0.0.1:19097" {
+		clash["external-controller"] = "127.0.0.1:9097"
 		changed = true
 	}
 	return
