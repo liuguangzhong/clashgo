@@ -414,8 +414,15 @@ func (s *APIServer) handleDelay(w http.ResponseWriter, r *http.Request, proxy Ou
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(timeoutMs)*time.Millisecond)
 	defer cancel()
 
+	// 从 URL 中解析目标主机和端口
+	dstHost := "www.gstatic.com"
+	dstPort := uint16(80)
+	if strings.HasPrefix(url, "https://") {
+		dstPort = 443
+	}
+
 	start := time.Now()
-	meta := &Metadata{Network: "tcp", DstHost: "www.gstatic.com", DstPort: 80}
+	meta := &Metadata{Network: "tcp", DstHost: dstHost, DstPort: dstPort}
 	conn, err := proxy.DialTCP(ctx, meta)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, errMsg("dial failed: "+err.Error()))

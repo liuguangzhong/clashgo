@@ -180,6 +180,11 @@ func (g *URLTestGroup) testOne(proxy Outbound) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// 使用 HTTP（非 HTTPS）URL 来测试延迟，避免端口不匹配导致
+	// "Unsolicited response received on idle HTTP channel" 错误。
+	// testURL 可能是 https 的，但我们强制用 http + port 80 测试连通性。
+	testURL := "http://www.gstatic.com/generate_204"
+
 	start := time.Now()
 	meta := &Metadata{Network: "tcp", Type: "HTTP", DstHost: "www.gstatic.com", DstPort: 80}
 	conn, err := proxy.DialTCP(ctx, meta)
@@ -188,8 +193,8 @@ func (g *URLTestGroup) testOne(proxy Outbound) (time.Duration, error) {
 	}
 	defer conn.Close()
 
-	// 发送 HTTP GET
-	req, _ := http.NewRequestWithContext(ctx, "GET", g.testURL, nil)
+	// 发送 HTTP GET（注意：使用 http:// URL 与端口 80 一致）
+	req, _ := http.NewRequestWithContext(ctx, "GET", testURL, nil)
 	req.Header.Set("User-Agent", "ClashGo/1.0")
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -319,8 +324,22 @@ func (g *FallbackGroup) checkAll() {
 			defer cancel()
 			meta := &Metadata{Network: "tcp", Type: "HTTP", DstHost: "www.gstatic.com", DstPort: 80}
 			conn, err := proxy.DialTCP(ctx, meta)
+			if err != nil {
+				return
+			}
+			defer conn.Close()
+			// 发一个真正的 HTTP 请求来验证连通性，避免只连接不发请求
+			req, _ := http.NewRequestWithContext(ctx, "HEAD", "http://www.gstatic.com/generate_204", nil)
+			client := &http.Client{
+				Transport: &http.Transport{
+					DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+						return conn, nil
+					},
+				},
+			}
+			resp, err := client.Do(req)
 			if err == nil {
-				_ = conn.Close()
+				_ = resp.Body.Close()
 				newAlive[idx] = true
 			}
 		}(i, p)
