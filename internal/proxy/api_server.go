@@ -74,8 +74,19 @@ func NewAPIServer(kernel *Kernel, secret string) *APIServer {
 // Start 在 addr 上启动 API 服务器（对应 mihomo hub.Start）
 func (s *APIServer) Start(addr string) error {
 	s.server = &http.Server{
-		Addr:    addr,
-		Handler: s.mux,
+		Addr: addr,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// 全局 CORS（mihomo 原版在每个请求上设置）
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET,PUT,PATCH,POST,DELETE,OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization,Content-Type")
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Length")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			s.mux.ServeHTTP(w, r)
+		}),
 	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
