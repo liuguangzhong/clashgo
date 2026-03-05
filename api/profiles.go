@@ -126,7 +126,7 @@ func (a *ProfileAPI) DeleteProfile(uid string) error {
 	return a.mgr.DeleteProfile(uid)
 }
 
-// EnhanceProfiles 触发增强流水线（切换配置或修改 chain 后调用）
+// EnhanceProfiles 触发增强流水线（切换配置或修改 chain 后调用，有 debounce）
 func (a *ProfileAPI) EnhanceProfiles() error {
 	utils.Log().Info("[链路] EnhanceProfiles → UpdateConfig")
 	if coreManagerRef == nil {
@@ -143,15 +143,16 @@ func (a *ProfileAPI) EnhanceProfiles() error {
 }
 
 // PatchProfilesConfig 将指定 profile 设为当前配置
+// 使用 ForceUpdateConfig 绕过 debounce，确保用户切换订阅时内核必定重新加载
 func (a *ProfileAPI) PatchProfilesConfig(uid string) error {
 	utils.Log().Info("[链路] PatchProfilesConfig 开始", zap.String("uid", uid))
 	if err := a.mgr.SetCurrentProfile(uid); err != nil {
 		utils.Log().Error("[链路] SetCurrentProfile 失败", zap.Error(err))
 		return err
 	}
-	utils.Log().Info("[链路] SetCurrentProfile 成功，开始 EnhanceProfiles")
-	if err := a.EnhanceProfiles(); err != nil {
-		utils.Log().Error("[链路] EnhanceProfiles 失败", zap.Error(err))
+	utils.Log().Info("[链路] SetCurrentProfile 成功，ForceUpdateConfig 加载代理")
+	if err := coreManagerRef.ForceUpdateConfig(); err != nil {
+		utils.Log().Error("[链路] ForceUpdateConfig 失败", zap.Error(err))
 		return err
 	}
 	utils.Log().Info("[链路] PatchProfilesConfig 完成")
@@ -458,6 +459,7 @@ func maskURL(rawURL string) string {
 // coreManagerRef 由 app.go 在初始化时设置（UpdateConfig 接口）
 var coreManagerRef interface {
 	UpdateConfig() error
+	ForceUpdateConfig() error
 }
 
 // coreRestarter 扩展接口：包含 Restart 方法
@@ -469,6 +471,7 @@ var coreRestarter interface {
 // core.Manager 同时满足 coreManagerRef 和 coreRestarter 接口
 func SetCoreManager(cm interface {
 	UpdateConfig() error
+	ForceUpdateConfig() error
 	Restart() error
 }) {
 	coreManagerRef = cm

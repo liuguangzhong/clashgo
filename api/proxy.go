@@ -34,6 +34,7 @@ func SetCoreLifecycle(cm interface {
 	Start(ctx context.Context) error
 	Stop() error
 	UpdateConfig() error
+	ForceUpdateConfig() error
 	Restart() error
 }) {
 	coreLifecycle = cm

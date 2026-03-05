@@ -174,6 +174,7 @@ func (m *Manager) Restart() error {
 // UpdateConfig 重新生成增强配置并热加载（对应原版 update_config → apply_config → reload_config）
 //
 // 包含 debounce 防抖：短时间内重复调用直接跳过。
+// 用于配置变更事件（如开关系统代理），用户显式切换订阅请使用 ForceUpdateConfig。
 func (m *Manager) UpdateConfig() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -181,13 +182,29 @@ func (m *Manager) UpdateConfig() error {
 	// Debounce（对应原版 should_update_config）
 	now := time.Now()
 	if !m.lastUpdate.IsZero() && now.Sub(m.lastUpdate) < configUpdateDebounce {
-		utils.Log().Debug("UpdateConfig debounced",
+		utils.Log().Info("UpdateConfig debounced（跳过）",
 			zap.Duration("elapsed", now.Sub(m.lastUpdate)),
 		)
 		return nil
 	}
 	m.lastUpdate = now
+	return m.doUpdate()
+}
 
+// ForceUpdateConfig 强制重新生成配置并热加载，忽略 debounce。
+// 用于用户显式切换/激活订阅，必须保证执行。
+func (m *Manager) ForceUpdateConfig() error {
+	m.mu.Lock()
+	m.lastUpdate = time.Time{} // 重置 debounce 计时器
+	m.mu.Unlock()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.doUpdate()
+}
+
+// doUpdate 执行实际的配置生成+热加载（必须在 m.mu.Lock() 下调用）
+func (m *Manager) doUpdate() error {
 	utils.Log().Info("UpdateConfig: generating runtime config")
 
 	runtimePath, err := m.generateRuntimeConfig()
