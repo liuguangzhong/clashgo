@@ -154,11 +154,33 @@ func (s *APIServer) registerRoutes() {
 	// /connections
 	m.HandleFunc("/connections", wrap(s.handleConnections))
 
+	// /providers (rule providers)
+	m.HandleFunc("/providers/rules", wrap(s.handleRuleProviders))
+
+	// /proxies/providers  (proxy providers)
+	m.HandleFunc("/providers/proxies", wrap(s.handleProxyProviders))
+	m.HandleFunc("/providers/proxies/", wrap(s.handleProxyProviders))
+
 	// /logs  (WebSocket 或 long-poll)
 	m.HandleFunc("/logs", wrap(s.handleLogs))
 
 	// /traffic (WebSocket 流量)
 	m.HandleFunc("/traffic", wrap(s.handleTraffic))
+}
+
+// handleProxyProviders GET /providers/proxies — 代理提供者（订阅）列表
+// 我们的内核不使用外部 provider，返回空列表即可让前端不报错
+func (s *APIServer) handleProxyProviders(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"providers": map[string]interface{}{},
+	})
+}
+
+// handleRuleProviders GET /providers/rules — 规则提供者列表
+func (s *APIServer) handleRuleProviders(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"providers": map[string]interface{}{},
+	})
 }
 
 // ── Route Handlers ────────────────────────────────────────────────────────────
