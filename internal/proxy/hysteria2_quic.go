@@ -123,14 +123,8 @@ func hy2Authenticate(ctx context.Context, qconn *quic.Conn, password string) err
 		return fmt.Errorf("open auth stream: %w", err)
 	}
 
-	// HTTP/3 HEADERS 帧
-	headers := encodeQPACKHeaders(map[string]string{
-		":method":        "POST",
-		":path":          "/auth",
-		":authority":     "hysteria",
-		"hysteria-auth":  password,
-		"hysteria-cc-rx": "0",
-	})
+	// HTTP/3 HEADERS 帧 (QPACK 编码)
+	headers := encodeQPACKAuthRequest(password)
 	frame := encodeH3Frame(0x01, headers)
 
 	if _, err := stream.Write(frame); err != nil {
@@ -264,16 +258,66 @@ func appendVarint(buf []byte, v uint64) []byte {
 	return append(buf, tmp[:n]...)
 }
 
-func encodeQPACKHeaders(headers map[string]string) []byte {
+// encodeQPACKAuthRequest 按 RFC 9204 正确编码 Hysteria2 认证请求头
+// QPACK 静态表: :method POST=20, :path=1, :authority=0
+func encodeQPACKAuthRequest(password string) []byte {
 	var buf []byte
-	buf = append(buf, 0x00, 0x00) // Required Insert Count=0, Delta Base=0
-	for name, value := range headers {
-		buf = append(buf, 0x20|0x08) // literal without name ref, never indexed
-		buf = append(buf, byte(len(name)))
-		buf = append(buf, []byte(name)...)
-		buf = append(buf, byte(len(value)))
-		buf = append(buf, []byte(value)...)
+
+	// Required Insert Count = 0, Delta Base = 0
+	buf = append(buf, 0x00, 0x00)
+
+	// :method POST — Indexed Field Line (static table index 20)
+	// Format: 1_T_Index(6+), T=1(static), Index=20
+	// Byte: 1_1_010100 = 0xd4
+	buf = append(buf, 0xd4)
+
+	// :path /auth — Literal with Name Reference (static table index 1)
+	// Format: 0_1_N_T_Index(4+), N=0, T=1(static), Index=1
+	// Byte: 0_1_0_1_0001 = 0x51
+	buf = append(buf, 0x51)
+	// Value: H=0, Length(7+)=5, then "/auth"
+	buf = append(buf, 0x05)
+	buf = append(buf, "/auth"...)
+
+	// :authority hysteria — Literal with Name Reference (static index 0)
+	// Byte: 0_1_0_1_0000 = 0x50
+	buf = append(buf, 0x50)
+	buf = append(buf, 0x08) // len("hysteria")=8
+	buf = append(buf, "hysteria"...)
+
+	// hysteria-auth: <password> — Literal Without Name Reference
+	// Format: 0_0_1_N_H_NameLen(3+), N=0, H=0
+	// "hysteria-auth" = 13 chars, 3-bit prefix max=7, need overflow: 7 + 6
+	// Byte: 0_0_1_0_0_111 = 0x27, then 6
+	buf = append(buf, 0x27, 0x06)
+	buf = append(buf, "hysteria-auth"...)
+	// Value: H=0, len with 7-bit prefix
+	buf = appendPrefixInt(buf, 7, uint64(len(password)))
+	buf = append(buf, password...)
+
+	// hysteria-cc-rx: 0 — Literal Without Name Reference
+	// "hysteria-cc-rx" = 14 chars, overflow: 7 + 7
+	buf = append(buf, 0x27, 0x07)
+	buf = append(buf, "hysteria-cc-rx"...)
+	buf = append(buf, 0x01) // len("0")=1
+	buf = append(buf, '0')
+
+	return buf
+}
+
+// appendPrefixInt 编码 QPACK/HPACK 前缀整数 (RFC 7541 Section 5.1)
+func appendPrefixInt(buf []byte, prefixBits int, value uint64) []byte {
+	maxVal := uint64((1 << prefixBits) - 1)
+	if value < maxVal {
+		return append(buf, byte(value))
 	}
+	buf = append(buf, byte(maxVal))
+	value -= maxVal
+	for value >= 128 {
+		buf = append(buf, byte(value%128+128))
+		value /= 128
+	}
+	buf = append(buf, byte(value))
 	return buf
 }
 
