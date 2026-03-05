@@ -85,10 +85,29 @@ func (a *ProxyAPI) mihomoClient() (*mihomo.Client, error) {
 		secret = s
 	}
 
+	utils.Log().Info("[链路] mihomoClient 构建",
+		zap.String("server", server),
+		zap.String("secret", secret),
+		zap.Any("clash_keys", func() []string {
+			keys := make([]string, 0, len(clash))
+			for k := range clash {
+				keys = append(keys, k)
+			}
+			return keys
+		}()))
+
 	client := mihomo.NewClient(server, secret)
-	if !client.IsAlive() {
-		return nil, fmt.Errorf("Mihomo core is not running (server: %s)", server)
+
+	// 先试直接 HTTP 请求看具体错误
+	ver, vErr := client.GetVersion(context.Background())
+	if vErr != nil {
+		utils.Log().Error("[链路] mihomoClient GetVersion 失败",
+			zap.String("server", server),
+			zap.String("secret_len", fmt.Sprintf("%d", len(secret))),
+			zap.Error(vErr))
+		return nil, fmt.Errorf("Mihomo core is not running (server: %s): %w", server, vErr)
 	}
+	utils.Log().Info("[链路] mihomoClient 连接成功", zap.String("version", ver))
 	return client, nil
 }
 
