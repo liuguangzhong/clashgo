@@ -27,6 +27,26 @@ export PATH="$PATH:$(go env GOPATH 2>/dev/null)/bin"
 # Wails binding generation 需要 DISPLAY；如未设置则使用 :0
 export DISPLAY="${DISPLAY:-:0}"
 
+# ── webkit2gtk 兼容处理 ───────────────────────────────────────────────────────
+# Wails 的 CGO 写死用 webkit2gtk-4.0，但 Ubuntu 22.04+ 默认只有 4.1。
+# 在 /tmp 创建一个兼容的 .pc 文件并加入 PKG_CONFIG_PATH 即可无缝桥接。
+if ! pkg-config --exists webkit2gtk-4.0 2>/dev/null && \
+     pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+    COMPAT_PC_DIR="/tmp/clashgo-pkgconfig"
+    mkdir -p "$COMPAT_PC_DIR"
+    cat > "$COMPAT_PC_DIR/webkit2gtk-4.0.pc" <<'PCEOF'
+Name: webkit2gtk-4.0
+Description: WebKitGTK 4.0 (compatibility alias for 4.1)
+Version: 2.40.0
+Requires: webkit2gtk-4.1
+Cflags:
+Libs:
+PCEOF
+    export PKG_CONFIG_PATH="$COMPAT_PC_DIR${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    warn "webkit2gtk-4.0 不存在，已创建兼容重定向 → webkit2gtk-4.1"
+fi
+
+
 # ── 颜色 ──────────────────────────────────────────────────────────────────────
 info()  { echo -e "\033[36m  $*\033[0m"; }
 ok()    { echo -e "\033[32m✓ $*\033[0m"; }
