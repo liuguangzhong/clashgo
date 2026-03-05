@@ -422,5 +422,5 @@ export const IpInfoCard = () => {
 };
 
 function useIPInfo() {
-  return useSWRImmutable(IP_INFO_CACHE_KEY, getIpInfo, SWR_EXTERNAL_API);
+  return useSWRImmutable(IP_INFO_CACHE_KEY, () => getIpInfo(false), SWR_EXTERNAL_API);
 }

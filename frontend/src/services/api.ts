@@ -138,6 +138,29 @@ async function fetchViaGoProxy(url: string, proxyPort: number): Promise<string> 
   return resp.text();
 }
 
+/**
+ * 不走代理直接请求（用于本地 IP 检测）
+ */
+async function fetchDirect(url: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let SystemAPI: any = null;
+  try {
+    SystemAPI = await import("../../wailsjs/go/api/SystemAPI");
+  } catch {
+    // not in Wails environment
+  }
+
+  if (SystemAPI?.FetchDirect) {
+    return SystemAPI.FetchDirect(url);
+  }
+
+  // fallback: native fetch
+  const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.text();
+}
+
+
 /** 读取当前 Clash mixed-port */
 async function getMixedPort(): Promise<number> {
   try {
@@ -154,12 +177,14 @@ async function getMixedPort(): Promise<number> {
   }
 }
 
-/** 获取当前 IP 和地理位置信息（通过代理）*/
-export const getIpInfo = async (): Promise<
+/** 获取当前 IP 和地理位置信息 */
+export const getIpInfo = async (
+  useProxy: boolean = true,
+): Promise<
   IpInfo & { lastFetchTs: number }
 > => {
   const maxRetries = 2;
-  const proxyPort = await getMixedPort();
+  const proxyPort = useProxy ? await getMixedPort() : 0;
 
   const shuffledServices = IP_CHECK_SERVICES.toSorted(
     () => Math.random() - 0.5,
@@ -167,16 +192,16 @@ export const getIpInfo = async (): Promise<
   let lastError: unknown | null = null;
 
   for (const service of shuffledServices) {
-    debugLog(`尝试IP检测服务: ${service.url}`);
+    debugLog(`尝试IP检测服务: ${service.url} (proxy=${useProxy})`);
 
     try {
       return await asyncRetry(
         async (bail) => {
-          console.debug("Fetching IP information via Go proxy:", service.url);
-
           let body: string;
           try {
-            body = await fetchViaGoProxy(service.url, proxyPort);
+            body = useProxy
+              ? await fetchViaGoProxy(service.url, proxyPort)
+              : await fetchDirect(service.url);
           } catch (err) {
             throw err;
           }

@@ -78,6 +78,23 @@ func (a *SystemAPI) FetchViaProxy(targetURL string, proxyPort int) (string, erro
 	return string(body), nil
 }
 
+// FetchDirect 不走代理直接发起 HTTP GET（用于本地 IP 检测）
+func (a *SystemAPI) FetchDirect(targetURL string) (string, error) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	resp, err := client.Get(targetURL)
+	if err != nil {
+		return "", fmt.Errorf("fetch direct: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+	return string(body), nil
+}
+
 // ─── 系统代理 ─────────────────────────────────────────────────────────────────
 
 // GetSysProxy 读取当前系统代理设置
