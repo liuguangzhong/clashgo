@@ -129,7 +129,9 @@ func (e *Engine) Run() (*Result, error) {
 	httpEnabled := e.verge.VergeHttpEnabled != nil && *e.verge.VergeHttpEnabled
 	redirEnabled := e.verge.VergeRedirEnabled != nil && *e.verge.VergeRedirEnabled
 	tproxyEnabled := e.verge.VergeTProxyEnabled != nil && *e.verge.VergeTProxyEnabled
-	externalCtrlEnabled := e.verge.EnableExternalController != nil && *e.verge.EnableExternalController
+	// 自实现内核始终需要 external-controller 提供 REST API（/configs, /proxies等）
+	// 不能因 verge.EnableExternalController 为 nil 就禁用
+	externalCtrlEnabled := true
 
 	baseConfig = MergeClashBase(baseConfig, e.clash, MergeClashBaseOpts{
 		SocksEnabled:        socksEnabled,

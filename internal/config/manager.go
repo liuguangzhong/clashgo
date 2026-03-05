@@ -409,7 +409,7 @@ func defaultClashBase() IClashBase {
 		"allow-lan":           false,
 		"ipv6":                true,
 		"mode":                "rule",
-		"external-controller": "127.0.0.1:19097",
+		"external-controller": "127.0.0.1:9097",
 		"unified-delay":       true,
 		"secret":              "clashgo-secret",
 		// DNS 配置：确保 TUN 模式 dns-hijack 下即使没有激活的订阅，

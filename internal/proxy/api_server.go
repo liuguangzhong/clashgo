@@ -378,9 +378,29 @@ func (s *APIServer) handleConfigs(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodGet:
+		cfg := s.kernel.GetConfig()
+		mixed := 7897
+		if cfg != nil && cfg.MixedPort > 0 {
+			mixed = int(cfg.MixedPort)
+		}
+		mode := "rule"
+		if s.kernel.tunnel != nil {
+			mode = s.kernel.tunnel.Mode().String()
+		}
+		allowLan := false
+		if cfg != nil {
+			allowLan = cfg.AllowLan
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"mode":    s.kernel.tunnel.Mode().String(),
-			"running": s.kernel.IsRunning(),
+			"mode":       mode,
+			"allow-lan":  allowLan,
+			"mixed-port": mixed,
+			"port":       0,
+			"socks-port": 0,
+			"redir-port": 0,
+			"ipv6":       true,
+			"log-level":  "info",
+			"running":    s.kernel.IsRunning(),
 		})
 
 	default:

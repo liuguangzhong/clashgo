@@ -55,6 +55,14 @@ type Kernel struct {
 	tunManager *TUNManager
 	running    bool
 	log        *zap.Logger
+	currentCfg *KernelConfig // 最近一次成功应用的配置
+}
+
+// GetConfig 返回当前运行配置（只读）
+func (k *Kernel) GetConfig() *KernelConfig {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.currentCfg
 }
 
 var (
@@ -194,6 +202,7 @@ func (k *Kernel) ApplyConfig(cfg *KernelConfig) error {
 	}
 
 	k.running = true
+	k.currentCfg = cfg
 	k.log.Info("Kernel config applied successfully")
 	return nil
 }
