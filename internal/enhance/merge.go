@@ -15,10 +15,10 @@ type ChainType int
 
 const (
 	ChainTypeMerge   ChainType = iota // YAML Merge 策略
-	ChainTypeScript                    // JavaScript 脚本
-	ChainTypeRules                     // Rules 注入
-	ChainTypeProxies                   // Proxies 注入
-	ChainTypeGroups                    // Groups 注入
+	ChainTypeScript                   // JavaScript 脚本
+	ChainTypeRules                    // Rules 注入
+	ChainTypeProxies                  // Proxies 注入
+	ChainTypeGroups                   // Groups 注入
 )
 
 // ChainItem 代表一个处理节点
@@ -132,19 +132,23 @@ func MergeClashBase(cfg map[string]interface{}, base config.IClashBase, opts Mer
 	for key, val := range base {
 		switch key {
 		case "tun":
-			// TUN 配置：深度合并
-			existing := map[string]interface{}{}
+			// TUN 配置合并策略：
+			// 1. 先读取订阅中的 tun 字段作为底（如 stack: mixed）
+			// 2. 再用 clash.yaml（用户显式配置）覆盖
+			// 这样用户在 UI 里设置的 stack: system 永远不会被订阅覆盖
+			profileTUN := map[string]interface{}{}
 			if v, ok := cfg[key]; ok {
 				if m, ok := toStringMap(v); ok {
-					existing = m
+					profileTUN = m
 				}
 			}
+			// clash.yaml 里的用户配置（base）覆盖订阅里的值
 			if patchMap, ok := toStringMap(val); ok {
 				for k, v := range patchMap {
-					existing[k] = v
+					profileTUN[k] = v // 用户配置优先
 				}
 			}
-			cfg[key] = existing
+			cfg[key] = profileTUN
 
 		case "socks-port":
 			if !opts.SocksEnabled {

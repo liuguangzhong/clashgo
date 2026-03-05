@@ -70,22 +70,28 @@ async function fetchProxyIp(): Promise<ProxyIpData> {
         // fallback to default
     }
 
-    // 通过代理获取IP（使用 fetch + proxy）
+    // 通过 Go 后端发请求（走 Clash 代理端口），避免 WebKit 不走系统代理的问题
+    let _SystemAPI: any = {};
+    try {
+        _SystemAPI = await import("../../../wailsjs/go/api/SystemAPI");
+    } catch { /* stub mode */ }
+
     for (const url of PROXY_IP_SERVICES) {
         try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 5000);
+            let body: string;
+            if (_SystemAPI.FetchViaProxy) {
+                body = await _SystemAPI.FetchViaProxy(url, proxyPort);
+            } else {
+                // fallback: 直接 fetch（开发模式/非 Wails 环境）
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 5000);
+                const resp = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (!resp.ok) continue;
+                body = await resp.text();
+            }
 
-            const response = await fetch(url, {
-                signal: controller.signal,
-            });
-            clearTimeout(timeout);
-
-            if (!response.ok) continue;
-
-            const data = await response.json();
-
-            // 适配不同API的返回格式
+            const data = JSON.parse(body);
             return {
                 ip: data.ip || data.query || "Unknown",
                 country: data.country || data.country_name || undefined,
@@ -100,6 +106,7 @@ async function fetchProxyIp(): Promise<ProxyIpData> {
 
     throw new Error("无法获取代理IP");
 }
+
 
 // 代理IP信息卡片
 export const ProxyIpCard = () => {

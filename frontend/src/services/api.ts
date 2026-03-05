@@ -1,21 +1,9 @@
-import { getName, getVersion } from "@tauri-apps/api/app";
-import { fetch } from "@tauri-apps/plugin-http";
 import { asyncRetry } from "foxts/async-retry";
 import { extractErrorMessage } from "foxts/extract-error-message";
-import { once } from "foxts/once";
 
 import { debugLog } from "@/utils/debug";
 
-const getUserAgentPromise = once(async () => {
-  try {
-    const [name, version] = await Promise.all([getName(), getVersion()]);
-    return `${name}/${version}`;
-  } catch (error) {
-    console.debug("Failed to build User-Agent, fallback to default", error);
-    return "clashgo";
-  }
-});
-// Get current IP and geolocation information （refactored IP detection with service-specific mappings）
+// Get current IP and geolocation information
 interface IpInfo {
   ip: string;
   country_code: string;
@@ -33,15 +21,16 @@ interface IpInfo {
 // IP检测服务配置
 interface ServiceConfig {
   url: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mapping: (data: any) => IpInfo;
-  timeout?: number; // 保留timeout字段（如有需要）
 }
 
 // 可用的IP检测服务列表及字段映射
 const IP_CHECK_SERVICES: ServiceConfig[] = [
   {
     url: "https://api.ip.sb/geoip",
-    mapping: (data) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mapping: (data: any) => ({
       ip: data.ip || "",
       country_code: data.country_code || "",
       country: data.country || "",
@@ -57,7 +46,8 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
   },
   {
     url: "https://ipapi.co/json",
-    mapping: (data) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mapping: (data: any) => ({
       ip: data.ip || "",
       country_code: data.country_code || "",
       country: data.country_name || "",
@@ -73,7 +63,8 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
   },
   {
     url: "https://api.ipapi.is/",
-    mapping: (data) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mapping: (data: any) => ({
       ip: data.ip || "",
       country_code: data.location?.country_code || "",
       country: data.location?.country || "",
@@ -89,7 +80,8 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
   },
   {
     url: "https://ipwho.is/",
-    mapping: (data) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mapping: (data: any) => ({
       ip: data.ip || "",
       country_code: data.country_code || "",
       country: data.country || "",
@@ -104,24 +96,9 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
     }),
   },
   {
-    url: "https://ip.api.skk.moe/cf-geoip",
-    mapping: (data) => ({
-      ip: data.ip || "",
-      country_code: data.country || "",
-      country: data.country || "",
-      region: data.region || "",
-      city: data.city || "",
-      organization: data.asOrg || "",
-      asn: data.asn || 0,
-      asn_organization: data.asOrg || "",
-      longitude: data.longitude || 0,
-      latitude: data.latitude || 0,
-      timezone: data.timezone || "",
-    }),
-  },
-  {
     url: "https://get.geojs.io/v1/ip/geo.json",
-    mapping: (data) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mapping: (data: any) => ({
       ip: data.ip || "",
       country_code: data.country_code || "",
       country: data.country || "",
@@ -137,54 +114,77 @@ const IP_CHECK_SERVICES: ServiceConfig[] = [
   },
 ];
 
-// 获取当前IP和地理位置信息
+/**
+ * 通过 Go 后端 SystemAPI.FetchViaProxy 发 HTTP GET 请求。
+ * 这样请求会经过 Clash 代理端口（localhost:7897），
+ * 绕过 WebKit2GTK 在 Linux 下不走系统代理的限制。
+ */
+async function fetchViaGoProxy(url: string, proxyPort: number): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let SystemAPI: any = null;
+  try {
+    SystemAPI = await import("../../wailsjs/go/api/SystemAPI");
+  } catch {
+    // not in Wails environment
+  }
+
+  if (SystemAPI?.FetchViaProxy) {
+    return SystemAPI.FetchViaProxy(url, proxyPort);
+  }
+
+  // fallback: native fetch（开发模式 / 非 Wails 环境）
+  const resp = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.text();
+}
+
+/** 读取当前 Clash mixed-port */
+async function getMixedPort(): Promise<number> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let ConfigAPI: any = null;
+    try {
+      ConfigAPI = await import("../../wailsjs/go/api/ConfigAPI");
+    } catch { /* stub */ }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const info: any = await ConfigAPI?.GetClashInfo?.();
+    return info?.mixed_port || info?.port || 7897;
+  } catch {
+    return 7897;
+  }
+}
+
+/** 获取当前 IP 和地理位置信息（通过代理）*/
 export const getIpInfo = async (): Promise<
   IpInfo & { lastFetchTs: number }
 > => {
-  // 配置参数
   const maxRetries = 2;
-  const serviceTimeout = 5000;
+  const proxyPort = await getMixedPort();
 
   const shuffledServices = IP_CHECK_SERVICES.toSorted(
     () => Math.random() - 0.5,
   );
   let lastError: unknown | null = null;
-  const userAgent = await getUserAgentPromise();
-  console.debug("User-Agent for IP detection:", userAgent);
 
   for (const service of shuffledServices) {
     debugLog(`尝试IP检测服务: ${service.url}`);
 
-    const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => {
-      timeoutController.abort();
-    }, service.timeout || serviceTimeout);
-
     try {
       return await asyncRetry(
         async (bail) => {
-          console.debug("Fetching IP information:", service.url);
+          console.debug("Fetching IP information via Go proxy:", service.url);
 
-          const response = await fetch(service.url, {
-            method: "GET",
-            signal: timeoutController.signal, // AbortSignal.timeout(service.timeout || serviceTimeout),
-            connectTimeout: service.timeout || serviceTimeout,
-            headers: {
-              "User-Agent": userAgent,
-            },
-          });
-
-          if (!response.ok) {
-            return bail(
-              new Error(
-                `IP 检测服务出错，状态码: ${response.status} from ${service.url}`,
-              ),
-            );
+          let body: string;
+          try {
+            body = await fetchViaGoProxy(service.url, proxyPort);
+          } catch (err) {
+            throw err;
           }
 
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           let data: any;
           try {
-            data = await response.json();
+            data = JSON.parse(body);
           } catch {
             return bail(new Error(`无法解析 JSON 响应 from ${service.url}`));
           }
@@ -192,7 +192,6 @@ export const getIpInfo = async (): Promise<
           if (data && data.ip) {
             debugLog(`IP检测成功，使用服务: ${service.url}`);
             return Object.assign(service.mapping(data), {
-              // use last fetch success timestamp
               lastFetchTs: Date.now(),
             });
           } else {
@@ -209,8 +208,6 @@ export const getIpInfo = async (): Promise<
     } catch (error) {
       debugLog(`IP检测服务失败: ${service.url}`, error);
       lastError = error;
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 

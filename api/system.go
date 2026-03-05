@@ -3,10 +3,14 @@ package api
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
+	"time"
 
 	"clashgo/internal/mihomo"
 	"clashgo/internal/proxy"
@@ -38,6 +42,40 @@ func (a *SystemAPI) SetMihomoServer(server, secret string) {
 
 func (a *SystemAPI) SetProxy(sp proxy.SysProxy) {
 	a.sysProxy = sp
+}
+
+// FetchViaProxy 通过 Clash 代理端口（localhost:proxyPort）发起 HTTP GET，
+// 返回响应体字符串。这是为了绕过 Linux 下 WebKit2GTK 的 fetch 不走系统代理的限制。
+// 前端 IP 信息卡片通过 Wails IPC 调用此方法，而不是直接用浏览器 fetch。
+func (a *SystemAPI) FetchViaProxy(targetURL string, proxyPort int) (string, error) {
+	if proxyPort <= 0 {
+		proxyPort = 7897
+	}
+	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", proxyPort)
+	proxyURL, err := url.Parse(proxyAddr)
+	if err != nil {
+		return "", fmt.Errorf("invalid proxy address: %w", err)
+	}
+
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   10 * time.Second,
+	}
+
+	resp, err := client.Get(targetURL)
+	if err != nil {
+		return "", fmt.Errorf("fetch via proxy: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+	return string(body), nil
 }
 
 // ─── 系统代理 ─────────────────────────────────────────────────────────────────
