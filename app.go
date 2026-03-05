@@ -265,6 +265,9 @@ func (a *App) gracefulShutdown() {
 	}
 
 	log.Info("ClashGo shutdown complete")
+
+	// 强制退出进程，确保所有后台 goroutine 都停止
+	os.Exit(0)
 }
 
 // StartHidden 判断是否静默启动
