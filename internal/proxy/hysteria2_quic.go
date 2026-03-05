@@ -116,8 +116,11 @@ func hy2AuthViaH3(ctx context.Context, qconn *quic.Conn, host, password string, 
 
 	padding := randomPadding(32, 64)
 
+	// 注意：URL host 必须是 "hysteria"，不是真实服务器地址！
+	// Hysteria2 服务端通过 :authority=hysteria 识别认证请求
+	// 参考: apernet/hysteria/core/v2/internal/protocol/http.go
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://"+host+"/auth", http.NoBody)
+		"https://hysteria/auth", http.NoBody)
 	if err != nil {
 		return fmt.Errorf("[hy2] 构建认证请求失败: %w", err)
 	}
