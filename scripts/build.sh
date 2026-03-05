@@ -126,7 +126,14 @@ build_platform() {
     if [ "$GO_ONLY" = "1" ]; then
         GOOS="$goos" GOARCH="$goarch" go build -ldflags "$LDFLAGS" -o "build/bin/${out}" .
     else
-        wails build -platform "$plat" -ldflags "$LDFLAGS" -o "$out"
+        # Linux 上优先使用 webkit2gtk-4.1（更新的 Ubuntu/Debian 默认版本）
+        EXTRA_TAGS=""
+        if [ "$goos" = "linux" ]; then
+            if pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+                EXTRA_TAGS="-tags webkit2_4_1"
+            fi
+        fi
+        wails build -platform "$plat" -ldflags "$LDFLAGS" -o "$out" $EXTRA_TAGS
     fi
 
     ok "${plat} 构建完成 → build/bin/${out}"
