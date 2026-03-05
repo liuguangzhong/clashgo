@@ -556,12 +556,18 @@ export async function calcuProxies(): Promise<{
   proxies: IProxyItem[];
 }> {
   await _bindingsReady;
+  console.log("[calcuProxies] bindings ready, calling GetProxies...");
   const [proxyResp, providerRecord] = await Promise.all([
     _ProxyAPI.GetProxies?.(),
     calcuProxyProviders(),
   ]);
 
+  console.log("[calcuProxies] proxyResp:", proxyResp);
+  console.log("[calcuProxies] proxyResp type:", typeof proxyResp);
+  console.log("[calcuProxies] proxyResp?.proxies:", proxyResp?.proxies ? Object.keys(proxyResp.proxies).length + " keys" : "null/undefined");
+
   const proxyRecord: Record<string, IProxyItem> = proxyResp?.proxies ?? {};
+  console.log("[calcuProxies] proxyRecord keys:", Object.keys(proxyRecord).length);
 
   const providerMap = Object.fromEntries(
     Object.entries(providerRecord as Record<string, { proxies: IProxyItem[] }>)
@@ -577,6 +583,7 @@ export async function calcuProxies(): Promise<{
   };
 
   const { GLOBAL: global, DIRECT: direct, REJECT: reject } = proxyRecord;
+  console.log("[calcuProxies] GLOBAL:", global ? `type=${global.type} all=${global.all?.length}` : "missing");
 
   let groups: IProxyGroupItem[] = Object.values(proxyRecord).reduce<IProxyGroupItem[]>(
     (acc, each) => {
@@ -587,6 +594,7 @@ export async function calcuProxies(): Promise<{
     },
     [],
   );
+  console.log("[calcuProxies] groups count:", groups.length, groups.map(g => g.name));
 
   if (global?.all) {
     const globalGroups: IProxyGroupItem[] = global.all.reduce<IProxyGroupItem[]>(
@@ -607,6 +615,8 @@ export async function calcuProxies(): Promise<{
       (p) => !p?.all?.length && p?.name !== "DIRECT" && p?.name !== "REJECT",
     ),
   );
+
+  console.log("[calcuProxies] final: groups=", groups.length, "proxies=", proxies.length);
 
   return {
     global: { ...global, all: global?.all?.map(generateItem) ?? [] } as IProxyGroupItem,

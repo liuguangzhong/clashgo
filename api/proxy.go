@@ -9,6 +9,8 @@ import (
 	"clashgo/internal/config"
 	"clashgo/internal/mihomo"
 	"clashgo/internal/utils"
+
+	"go.uber.org/zap"
 )
 
 // ProxyAPI 代理核心控制 API
@@ -93,11 +95,31 @@ func (a *ProxyAPI) mihomoClient() (*mihomo.Client, error) {
 // GetProxies 获取所有代理节点及代理组
 // 对应原: cmd::get_proxies
 func (a *ProxyAPI) GetProxies() (*mihomo.ProxiesResponse, error) {
+	utils.Log().Info("[链路] GetProxies 被调用")
 	client, err := a.mihomoClient()
 	if err != nil {
+		utils.Log().Error("[链路] GetProxies mihomoClient 失败", zap.Error(err))
 		return nil, err
 	}
-	return client.GetProxies(context.Background())
+	resp, err := client.GetProxies(context.Background())
+	if err != nil {
+		utils.Log().Error("[链路] GetProxies HTTP 请求失败", zap.Error(err))
+		return nil, err
+	}
+	proxyCount := 0
+	groupCount := 0
+	if resp != nil && resp.Proxies != nil {
+		proxyCount = len(resp.Proxies)
+		for _, p := range resp.Proxies {
+			if len(p.All) > 0 {
+				groupCount++
+			}
+		}
+	}
+	utils.Log().Info("[链路] GetProxies 成功",
+		zap.Int("proxies", proxyCount),
+		zap.Int("groups", groupCount))
+	return resp, nil
 }
 
 // GetRules 获取当前规则列表
