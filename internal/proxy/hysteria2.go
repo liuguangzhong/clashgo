@@ -119,7 +119,13 @@ func (h *Hysteria2Outbound) dialQuic(ctx context.Context) (*hy2QUICConn, error) 
 		return nil, fmt.Errorf("no QUIC dial function available")
 	}
 
+	// 将 obfs-password 通过 context 传递给 QUIC 拨号器
+	if h.obfsPass != "" {
+		ctx = WithObfsPassword(ctx, h.obfsPass)
+	}
+
 	conn, err := dialFn(ctx, h.server, h.password, h.sni, h.skipCert)
+
 	if err != nil {
 		return nil, err
 	}
