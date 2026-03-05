@@ -5,10 +5,10 @@ package proxy
 // 协议规范: https://v2.hysteria.network/docs/developers/Protocol/
 //
 // 流程：
-//   1. UDP 连接 → Salamander 混淆包装 → QUIC 传输（TLS 1.3, ALPN: "h3"）
-//   2. HTTP/3 POST /auth，Hysteria-Auth 头带密码，期望回复 233
-//   3. 后续每个 TCP 代理请求打开新 QUIC stream，发送 TCPRequest 二进制消息
-//   4. stream 变为双向数据中继
+//   1. UDP → Salamander 混淆 → QUIC (TLS1.3, ALPN:"h3")
+//   2. http3.Transport.NewClientConn → HTTP/3 POST /auth (自动控制流+QPACK)
+//   3. 检查响应 status=233
+//   4. 每个 TCP 代理：新 QUIC stream + TCPRequest 消息
 
 import (
 	"context"
@@ -17,7 +17,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -29,35 +31,33 @@ func init() {
 	SetHysteria2DialFn(hysteria2QuicDial)
 }
 
-// hysteria2QuicDial 通过 QUIC + Salamander 建立 Hysteria2 连接
+// hysteria2QuicDial 建立 Hysteria2 QUIC 连接并 HTTP/3 认证
 func hysteria2QuicDial(ctx context.Context, server, password, sni string, skipCert bool) (net.Conn, error) {
 	if sni == "" {
 		host, _, _ := net.SplitHostPort(server)
 		sni = host
 	}
 
-	log.Printf("[Hysteria2] QUIC dial: server=%s sni=%s", server, sni)
+	log.Printf("[hy2] ① QUIC dial: server=%s sni=%s", server, sni)
 
-	// 解析服务器地址
 	udpAddr, err := net.ResolveUDPAddr("udp", server)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %s: %w", server, err)
+		return nil, fmt.Errorf("[hy2] 解析地址失败 %s: %w", server, err)
 	}
 
-	// 创建 UDP 连接
 	udpConn, err := net.ListenUDP("udp", nil)
 	if err != nil {
-		return nil, fmt.Errorf("listen UDP: %w", err)
+		return nil, fmt.Errorf("[hy2] 创建 UDP socket 失败: %w", err)
 	}
+	log.Printf("[hy2] ② UDP socket 创建成功: local=%s", udpConn.LocalAddr())
 
-	// 获取 outbound 的 obfs 配置（通过 context 传递）
 	obfsPassword := getObfsPassword(ctx)
-
-	// 包装 Salamander 混淆
 	var pconn net.PacketConn = udpConn
 	if obfsPassword != "" {
-		log.Printf("[Hysteria2] 启用 Salamander 混淆: server=%s", server)
+		log.Printf("[hy2] ③ 启用 Salamander 混淆: server=%s", server)
 		pconn = NewSalamanderConn(udpConn, obfsPassword)
+	} else {
+		log.Printf("[hy2] ③ 无混淆（obfs-password 未设置）: server=%s", server)
 	}
 
 	tlsConf := &tls.Config{
@@ -73,24 +73,27 @@ func hysteria2QuicDial(ctx context.Context, server, password, sni string, skipCe
 		EnableDatagrams: true,
 	}
 
-	// 使用 Transport 指定自定义 PacketConn（带混淆）
-	tr := &quic.Transport{
-		Conn: pconn,
-	}
+	tr := &quic.Transport{Conn: pconn}
 
-	qconn, err := tr.Dial(ctx, udpAddr, tlsConf, quicConf)
+	dialCtx, cancelDial := context.WithTimeout(ctx, 8*time.Second)
+	defer cancelDial()
+
+	qconn, err := tr.Dial(dialCtx, udpAddr, tlsConf, quicConf)
 	if err != nil {
 		pconn.Close()
-		return nil, fmt.Errorf("QUIC dial %s: %w", server, err)
+		return nil, fmt.Errorf("[hy2] ④ QUIC 握手失败 %s: %w", server, err)
 	}
+	log.Printf("[hy2] ④ QUIC 握手成功: server=%s proto=%s",
+		server, qconn.ConnectionState().TLS.NegotiatedProtocol)
 
 	// HTTP/3 认证
-	if err := hy2Authenticate(ctx, qconn, password); err != nil {
+	if err := hy2AuthViaH3(ctx, qconn, sni, password, skipCert); err != nil {
 		qconn.CloseWithError(0, "auth failed")
-		return nil, fmt.Errorf("hysteria2 auth: %w", err)
+		pconn.Close()
+		return nil, err
 	}
 
-	log.Printf("[Hysteria2] 认证成功: server=%s", server)
+	log.Printf("[hy2] ⑥ 认证成功，连接就绪: server=%s", server)
 
 	return &hy2QUICConn{
 		qconn:  qconn,
@@ -99,11 +102,70 @@ func hysteria2QuicDial(ctx context.Context, server, password, sni string, skipCe
 	}, nil
 }
 
-// ── context 传递 obfs-password ────────────────────────────────────────────────
+// hy2AuthViaH3 通过 http3.Transport 发送认证请求（自动处理控制流和 QPACK）
+func hy2AuthViaH3(ctx context.Context, qconn *quic.Conn, host, password string, skipCert bool) error {
+	log.Printf("[hy2] ⑤ 开始 HTTP/3 认证: host=%s", host)
+
+	// 用已有的 *quic.Conn 创建 http3.ClientConn
+	h3tr := &http3.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: skipCert, //nolint:gosec
+		},
+	}
+	clientConn := h3tr.NewClientConn(qconn)
+
+	padding := randomPadding(32, 64)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://"+host+"/auth", http.NoBody)
+	if err != nil {
+		return fmt.Errorf("[hy2] 构建认证请求失败: %w", err)
+	}
+	req.Header.Set("Hysteria-Auth", password)
+	req.Header.Set("Hysteria-CC-RX", "0")
+	req.Header.Set("Hysteria-Padding", padding)
+
+	log.Printf("[hy2] ⑤ 发送认证请求: POST https://%s/auth password=%s...",
+		host, password[:min(6, len(password))])
+
+	authCtx, cancelAuth := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelAuth()
+
+	resp, err := clientConn.RoundTrip(req.WithContext(authCtx))
+	if err != nil {
+		return fmt.Errorf("[hy2] ⑤ 认证请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	log.Printf("[hy2] ⑤ 认证响应: status=%d body=%q", resp.StatusCode, string(body))
+
+	if resp.StatusCode != 233 {
+		return fmt.Errorf("[hy2] ⑤ 认证拒绝: status=%d (期望 233)", resp.StatusCode)
+	}
+	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func randomPadding(minLen, maxLen int) string {
+	n := minLen + rand.Intn(maxLen-minLen+1)
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = byte('a' + rand.Intn(26))
+	}
+	return string(b)
+}
+
+// ── context 传递 obfs-password ─────────────────────────────────────────────────
 
 type obfsPasswordKey struct{}
 
-// WithObfsPassword 将 obfs-password 存入 context
 func WithObfsPassword(ctx context.Context, password string) context.Context {
 	return context.WithValue(ctx, obfsPasswordKey{}, password)
 }
@@ -115,100 +177,72 @@ func getObfsPassword(ctx context.Context) string {
 	return ""
 }
 
-// ── HTTP/3 认证 ──────────────────────────────────────────────────────────────
-
-func hy2Authenticate(ctx context.Context, qconn *quic.Conn, password string) error {
-	stream, err := qconn.OpenStreamSync(ctx)
-	if err != nil {
-		return fmt.Errorf("open auth stream: %w", err)
-	}
-
-	// HTTP/3 HEADERS 帧 (QPACK 编码)
-	headers := encodeQPACKAuthRequest(password)
-	frame := encodeH3Frame(0x01, headers)
-
-	if _, err := stream.Write(frame); err != nil {
-		stream.Close()
-		return fmt.Errorf("write auth: %w", err)
-	}
-
-	statusCode, err := readH3ResponseStatus(stream)
-	if err != nil {
-		stream.Close()
-		return fmt.Errorf("read auth response: %w", err)
-	}
-	stream.Close()
-
-	if statusCode != 233 {
-		return fmt.Errorf("auth failed, status=%d (expected 233)", statusCode)
-	}
-	return nil
-}
-
-// ── QUIC 连接包装 ────────────────────────────────────────────────────────────
+// ── QUIC 连接包装 ──────────────────────────────────────────────────────────────
 
 type hy2QUICConn struct {
 	qconn  *quic.Conn
 	server string
-	pconn  net.PacketConn // 底层 UDP（可能带 Salamander）
+	pconn  net.PacketConn
 	mu     sync.Mutex
 }
 
 func (c *hy2QUICConn) DialStream(ctx context.Context, metadata *Metadata) (net.Conn, error) {
+	addr := metadata.DstHost + ":" + fmt.Sprint(metadata.DstPort)
+	if metadata.DstHost == "" && metadata.DstIP != nil {
+		addr = metadata.DstIP.String() + ":" + fmt.Sprint(metadata.DstPort)
+	}
+	log.Printf("[hy2] 打开 TCP 代理流: %s via %s", addr, c.server)
+
 	stream, err := c.qconn.OpenStreamSync(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("open proxy stream: %w", err)
+		return nil, fmt.Errorf("[hy2] open stream 失败: %w", err)
 	}
 
-	// TCPRequest: [varint 0x401] [varint addr_len] [addr "host:port"] [varint 0]
-	addr := fmt.Sprintf("%s:%d", metadata.DstHost, metadata.DstPort)
-	if metadata.DstHost == "" && metadata.DstIP != nil {
-		addr = fmt.Sprintf("%s:%d", metadata.DstIP.String(), metadata.DstPort)
-	}
-
+	// TCPRequest: [varint 0x401][varint addr_len][addr][varint pad_len][pad]
 	var buf []byte
-	buf = appendVarint(buf, 0x401)
-	buf = appendVarint(buf, uint64(len(addr)))
-	buf = append(buf, []byte(addr)...)
-	buf = appendVarint(buf, 0) // padding = 0
+	buf = appendUvarint(buf, 0x401)
+	buf = appendUvarint(buf, uint64(len(addr)))
+	buf = append(buf, addr...)
+	buf = appendUvarint(buf, 0)
 
 	if _, err := stream.Write(buf); err != nil {
 		stream.Close()
-		return nil, fmt.Errorf("write tcp request: %w", err)
+		return nil, fmt.Errorf("[hy2] 写 TCPRequest 失败: %w", err)
 	}
+	log.Printf("[hy2] TCPRequest 已发送: addr=%s", addr)
 
-	// TCPResponse: [uint8 status] [varint msg_len] [msg] [varint pad_len] [pad]
-	status := make([]byte, 1)
-	if _, err := io.ReadFull(stream, status); err != nil {
+	// TCPResponse: [uint8 status][varint msg_len][msg][varint pad_len][pad]
+	sb := make([]byte, 1)
+	if _, err := io.ReadFull(stream, sb); err != nil {
 		stream.Close()
-		return nil, fmt.Errorf("read tcp response: %w", err)
+		return nil, fmt.Errorf("[hy2] 读 TCPResponse status 失败: %w", err)
 	}
 
-	msgLen, err := binary.ReadUvarint(newByteReaderAdapter(stream))
+	msgLen, err := binary.ReadUvarint(ioByteReader(stream))
 	if err != nil {
 		stream.Close()
-		return nil, fmt.Errorf("read msg len: %w", err)
+		return nil, fmt.Errorf("[hy2] 读 msg_len 失败: %w", err)
 	}
-	var msg []byte
+	var msg string
 	if msgLen > 0 {
-		msg = make([]byte, msgLen)
-		io.ReadFull(stream, msg)
+		mb := make([]byte, msgLen)
+		io.ReadFull(stream, mb)
+		msg = string(mb)
 	}
 
-	padLen, _ := binary.ReadUvarint(newByteReaderAdapter(stream))
+	padLen, _ := binary.ReadUvarint(ioByteReader(stream))
 	if padLen > 0 {
-		pad := make([]byte, padLen)
-		io.ReadFull(stream, pad)
+		io.ReadFull(stream, make([]byte, padLen))
 	}
 
-	if status[0] != 0x00 {
+	log.Printf("[hy2] TCPResponse: status=0x%02x msg=%q", sb[0], msg)
+
+	if sb[0] != 0x00 {
 		stream.Close()
-		return nil, fmt.Errorf("tcp connect rejected: status=%d msg=%s", status[0], string(msg))
+		return nil, fmt.Errorf("[hy2] 服务端拒绝 TCP 连接: status=0x%02x msg=%s addr=%s", sb[0], msg, addr)
 	}
 
-	log.Printf("[Hysteria2] TCP stream: %s", addr)
-
-	return &quicStreamConn{
+	return &hy2StreamConn{
 		stream: stream,
 		laddr:  c.qconn.LocalAddr(),
 		raddr:  c.qconn.RemoteAddr(),
@@ -218,6 +252,7 @@ func (c *hy2QUICConn) DialStream(ctx context.Context, metadata *Metadata) (net.C
 func (c *hy2QUICConn) Read(b []byte) (int, error)  { return 0, io.EOF }
 func (c *hy2QUICConn) Write(b []byte) (int, error) { return 0, io.ErrClosedPipe }
 func (c *hy2QUICConn) Close() error {
+	log.Printf("[hy2] 关闭 QUIC 连接: server=%s", c.server)
 	c.qconn.CloseWithError(0, "")
 	if c.pconn != nil {
 		c.pconn.Close()
@@ -230,212 +265,39 @@ func (c *hy2QUICConn) SetDeadline(t time.Time) error      { return nil }
 func (c *hy2QUICConn) SetReadDeadline(t time.Time) error  { return nil }
 func (c *hy2QUICConn) SetWriteDeadline(t time.Time) error { return nil }
 
-// ── QUIC Stream → net.Conn ──────────────────────────────────────────────────
+// ── QUIC stream → net.Conn ────────────────────────────────────────────────────
 
-type quicStreamConn struct {
+type hy2StreamConn struct {
 	stream *quic.Stream
 	laddr  net.Addr
 	raddr  net.Addr
 }
 
-func (c *quicStreamConn) Read(b []byte) (int, error)  { return c.stream.Read(b) }
-func (c *quicStreamConn) Write(b []byte) (int, error) { return c.stream.Write(b) }
-func (c *quicStreamConn) Close() error {
+func (c *hy2StreamConn) Read(b []byte) (int, error)  { return c.stream.Read(b) }
+func (c *hy2StreamConn) Write(b []byte) (int, error) { return c.stream.Write(b) }
+func (c *hy2StreamConn) Close() error {
 	c.stream.CancelRead(0)
 	return c.stream.Close()
 }
-func (c *quicStreamConn) LocalAddr() net.Addr                { return c.laddr }
-func (c *quicStreamConn) RemoteAddr() net.Addr               { return c.raddr }
-func (c *quicStreamConn) SetDeadline(t time.Time) error      { return nil }
-func (c *quicStreamConn) SetReadDeadline(t time.Time) error  { return nil }
-func (c *quicStreamConn) SetWriteDeadline(t time.Time) error { return nil }
+func (c *hy2StreamConn) LocalAddr() net.Addr                { return c.laddr }
+func (c *hy2StreamConn) RemoteAddr() net.Addr               { return c.raddr }
+func (c *hy2StreamConn) SetDeadline(t time.Time) error      { return nil }
+func (c *hy2StreamConn) SetReadDeadline(t time.Time) error  { return nil }
+func (c *hy2StreamConn) SetWriteDeadline(t time.Time) error { return nil }
 
-// ── 辅助函数 ─────────────────────────────────────────────────────────────────
+// ── 辅助 ──────────────────────────────────────────────────────────────────────
 
-func appendVarint(buf []byte, v uint64) []byte {
+func appendUvarint(buf []byte, v uint64) []byte {
 	tmp := make([]byte, binary.MaxVarintLen64)
 	n := binary.PutUvarint(tmp, v)
 	return append(buf, tmp[:n]...)
 }
 
-// encodeQPACKAuthRequest 按 RFC 9204 正确编码 Hysteria2 认证请求头
-// QPACK 静态表: :method POST=20, :path=1, :authority=0
-func encodeQPACKAuthRequest(password string) []byte {
-	var buf []byte
+type ioByteReaderImpl struct{ r io.Reader }
 
-	// Required Insert Count = 0, Delta Base = 0
-	buf = append(buf, 0x00, 0x00)
-
-	// :method POST — Indexed Field Line (static table index 20)
-	// Format: 1_T_Index(6+), T=1(static), Index=20
-	// Byte: 1_1_010100 = 0xd4
-	buf = append(buf, 0xd4)
-
-	// :path /auth — Literal with Name Reference (static table index 1)
-	// Format: 0_1_N_T_Index(4+), N=0, T=1(static), Index=1
-	// Byte: 0_1_0_1_0001 = 0x51
-	buf = append(buf, 0x51)
-	// Value: H=0, Length(7+)=5, then "/auth"
-	buf = append(buf, 0x05)
-	buf = append(buf, "/auth"...)
-
-	// :authority hysteria — Literal with Name Reference (static index 0)
-	// Byte: 0_1_0_1_0000 = 0x50
-	buf = append(buf, 0x50)
-	buf = append(buf, 0x08) // len("hysteria")=8
-	buf = append(buf, "hysteria"...)
-
-	// hysteria-auth: <password> — Literal Without Name Reference
-	// Format: 0_0_1_N_H_NameLen(3+), N=0, H=0
-	// "hysteria-auth" = 13 chars, 3-bit prefix max=7, need overflow: 7 + 6
-	// Byte: 0_0_1_0_0_111 = 0x27, then 6
-	buf = append(buf, 0x27, 0x06)
-	buf = append(buf, "hysteria-auth"...)
-	// Value: H=0, len with 7-bit prefix
-	buf = appendPrefixInt(buf, 7, uint64(len(password)))
-	buf = append(buf, password...)
-
-	// hysteria-cc-rx: 0 — Literal Without Name Reference
-	// "hysteria-cc-rx" = 14 chars, overflow: 7 + 7
-	buf = append(buf, 0x27, 0x07)
-	buf = append(buf, "hysteria-cc-rx"...)
-	buf = append(buf, 0x01) // len("0")=1
-	buf = append(buf, '0')
-
-	return buf
-}
-
-// appendPrefixInt 编码 QPACK/HPACK 前缀整数 (RFC 7541 Section 5.1)
-func appendPrefixInt(buf []byte, prefixBits int, value uint64) []byte {
-	maxVal := uint64((1 << prefixBits) - 1)
-	if value < maxVal {
-		return append(buf, byte(value))
-	}
-	buf = append(buf, byte(maxVal))
-	value -= maxVal
-	for value >= 128 {
-		buf = append(buf, byte(value%128+128))
-		value /= 128
-	}
-	buf = append(buf, byte(value))
-	return buf
-}
-
-func encodeH3Frame(frameType uint64, payload []byte) []byte {
-	var buf []byte
-	buf = appendVarint(buf, frameType)
-	buf = appendVarint(buf, uint64(len(payload)))
-	buf = append(buf, payload...)
-	return buf
-}
-
-func readH3ResponseStatus(r io.Reader) (int, error) {
-	frameType, err := readVarint(r)
-	if err != nil {
-		return 0, fmt.Errorf("read frame type: %w", err)
-	}
-	for frameType != 0x01 {
-		frameLen, err := readVarint(r)
-		if err != nil {
-			return 0, fmt.Errorf("read frame len: %w", err)
-		}
-		if frameLen > 0 {
-			skip := make([]byte, frameLen)
-			io.ReadFull(r, skip)
-		}
-		frameType, err = readVarint(r)
-		if err != nil {
-			return 0, fmt.Errorf("read next frame type: %w", err)
-		}
-	}
-	frameLen, err := readVarint(r)
-	if err != nil {
-		return 0, fmt.Errorf("read headers frame len: %w", err)
-	}
-	headerBlock := make([]byte, frameLen)
-	if _, err := io.ReadFull(r, headerBlock); err != nil {
-		return 0, fmt.Errorf("read headers block: %w", err)
-	}
-	status := parseStatusFromQPACK(headerBlock)
-	if status == 0 {
-		return 0, fmt.Errorf("could not parse :status from response")
-	}
-	return status, nil
-}
-
-func parseStatusFromQPACK(block []byte) int {
-	if len(block) < 2 {
-		return 0
-	}
-	pos := 2 // skip Required Insert Count + Delta Base
-	for pos < len(block) {
-		b := block[pos]
-		if b&0x80 != 0 {
-			idx := int(b & 0x3f)
-			pos++
-			switch idx {
-			case 24:
-				return 200
-			case 25:
-				return 204
-			case 26:
-				return 206
-			case 27:
-				return 304
-			case 28:
-				return 400
-			case 29:
-				return 403
-			case 30:
-				return 404
-			case 31:
-				return 500
-			}
-			continue
-		}
-		if b&0xf0 == 0x20 || b&0xf0 == 0x30 {
-			pos++
-			if pos >= len(block) {
-				break
-			}
-			nameLen := int(block[pos] & 0x7f)
-			pos++
-			if pos+nameLen > len(block) {
-				break
-			}
-			name := string(block[pos : pos+nameLen])
-			pos += nameLen
-			if pos >= len(block) {
-				break
-			}
-			valueLen := int(block[pos] & 0x7f)
-			pos++
-			if pos+valueLen > len(block) {
-				break
-			}
-			value := string(block[pos : pos+valueLen])
-			pos += valueLen
-			if name == ":status" {
-				var status int
-				fmt.Sscanf(value, "%d", &status)
-				return status
-			}
-			continue
-		}
-		pos++
-	}
-	return 0
-}
-
-func readVarint(r io.Reader) (uint64, error) {
-	return binary.ReadUvarint(newByteReaderAdapter(r))
-}
-
-type byteReaderAdapter struct{ r io.Reader }
-
-func newByteReaderAdapter(r io.Reader) *byteReaderAdapter { return &byteReaderAdapter{r: r} }
-func (br *byteReaderAdapter) ReadByte() (byte, error) {
-	buf := make([]byte, 1)
-	_, err := br.r.Read(buf)
+func ioByteReader(r io.Reader) io.ByteReader { return &ioByteReaderImpl{r: r} }
+func (b *ioByteReaderImpl) ReadByte() (byte, error) {
+	buf := [1]byte{}
+	_, err := b.r.Read(buf[:])
 	return buf[0], err
 }
